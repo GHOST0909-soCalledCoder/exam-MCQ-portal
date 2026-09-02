@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>College Proctored MCQ Examination Portal</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- Stage 1: Student Verification & System Consent -->
+  <main id="auth-container" class="container">
+    <div class="card-center">
+      <div style="text-align: center; font-size: 2.5rem; margin-bottom: 0.5rem;">🎓</div>
+      <h1 class="card-title">Online Examination Portal</h1>
+      <p class="card-subtitle">AI-Monitored Anti-Cheat Secure Browser Session</p>
+
+      <div class="rules-box">
+        <h4>⚠️ Mandatory Examination Security Rules:</h4>
+        <ul>
+          <li><strong>Full Screen Required:</strong> Test must be completed in continuous fullscreen mode.</li>
+          <li><strong>Zero Tab Switching:</strong> Switching tabs, minimizing the browser, or pressing <code>Alt+Tab</code> is strictly detected.</li>
+          <li><strong>2-Strike Disqualification:</strong> 
+            <br>• Strike 1: Blaring audio alarm + Warning overlay.
+            <br>• Strike 2: <strong>Immediate test termination, form lockout, and disqualification</strong>.
+          </li>
+          <li><strong>Restricted Hotkeys:</strong> DevTools (<code>F12</code>), Copy/Paste, and reload are disabled.</li>
+        </ul>
+      </div>
+
+      <!-- Google Account Pre-Check Box -->
+      <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1.25rem;">
+        <div style="font-weight: 600; color: #60a5fa; font-size: 0.85rem; margin-bottom: 0.25rem;">📧 Google Account Notice:</div>
+        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.6rem; line-height: 1.4;">
+          Google Forms records your active browser Google account. If your college requires a specific email, verify it now:
+        </p>
+        <a href="https://accounts.google.com" target="_blank" rel="noopener" class="btn btn-secondary" style="padding: 0.4rem 0.85rem; font-size: 0.8rem; width: auto; display: inline-flex;">
+          ↗ Check / Switch Google Account (Opens New Tab)
+        </a>
+      </div>
+
+      <form id="student-login-form">
+        <div class="form-group">
+          <label class="form-label" for="student-name">Full Name *</label>
+          <input type="text" id="student-name" class="form-input" placeholder="e.g. John Doe" required autocomplete="name">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="student-roll">Roll Number / Register ID *</label>
+          <input type="text" id="student-roll" class="form-input" placeholder="e.g. 21CS045" required autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="student-section">Branch / Section (Optional)</label>
+          <input type="text" id="student-section" class="form-input" placeholder="e.g. CSE - Section B">
+        </div>
+
+        <button type="submit" id="btn-start" class="btn">
+          🔒 Enter Fullscreen & Start Exam
+        </button>
+      </form>
+
+      <p style="text-align: center; font-size: 0.8rem; color: var(--text-muted); margin-top: 1.5rem;">
+        Invigilator / Teacher? <a href="/admin" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">Open Proctor Dashboard</a>
+      </p>
+    </div>
+  </main>
+
+  <!-- Stage 2: Proctored Exam Viewport -->
+  <div id="exam-viewport" class="hidden">
+    <!-- Top Exam Header -->
+    <header id="exam-header" class="exam-header">
+      <div class="brand-badge">
+        <div class="icon">🛡️</div>
+        <span id="exam-display-title">College MCQ Examination</span>
+      </div>
+      <div class="student-meta-bar">
+        <div><strong>Student:</strong> <span id="student-display-name">--</span> (<span id="student-display-roll">--</span>)</div>
+        <div id="exam-timer" class="badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa;">⏱️ 60:00</div>
+        <div id="strike-badge" class="badge badge-live">
+          <span class="dot-pulse"></span>
+          STRIKES: 0 / 2
+        </div>
+      </div>
+    </header>
+
+    <!-- Full-screen Iframe Container -->
+    <div class="iframe-container">
+      <iframe id="google-form-iframe" src="about:blank" allow="autoplay"></iframe>
+    </div>
+
+    <!-- Floating Action Footer -->
+    <div class="exam-proctor-footer">
+      <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem;">
+        <span class="dot-pulse" style="background-color: #10b981;"></span>
+        <span style="display: inline-block;">Proctor Active</span>
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button class="btn btn-secondary" style="width: auto; padding: 0.45rem 0.85rem; font-size: 0.82rem;" onclick="proctor.requestAccountSwitch()" title="Temporarily pauses proctoring to switch Google account">
+          🔄 Switch Google Account
+        </button>
+        <button class="btn btn-success" style="width: auto; padding: 0.45rem 1rem; font-size: 0.85rem;" onclick="proctor.completeExam()">
+          ✓ Submit Exam
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Warning Modal (Strike 1) -->
+  <div id="warning-modal" class="warning-overlay hidden">
+    <div class="warning-dialog">
+      <div class="warning-icon">⚠️</div>
+      <h2 class="warning-title">SECURITY WARNING: STRIKE <span id="strike-count-text">1 OF 2</span></h2>
+      <p class="warning-message">
+        A cheating violation was detected:
+        <br><strong id="warning-reason-text" style="color: var(--danger-border);">Tab Switch / Window Minimize</strong>
+      </p>
+      <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+        Your action has been logged on the Proctor's live monitor. <strong>One more infraction will immediately terminate your exam and forfeit your submission!</strong>
+      </p>
+
+      <button class="btn btn-danger" onclick="proctor.dismissWarning()">
+        I Acknowledge & Return to Fullscreen
+      </button>
+    </div>
+  </div>
+
+  <!-- Stage 3: Auto-Termination & Disqualification Screen (Strike 2) -->
+  <div id="termination-screen" class="termination-screen hidden">
+    <div class="termination-box">
+      <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">🚨</div>
+      <h1>EXAMINATION AUTO-TERMINATED</h1>
+      <p style="color: #fca5a5; font-size: 1.1rem; margin-bottom: 1.5rem;">
+        You have exceeded the maximum allowed security strikes (2/2). Access to the examination form has been revoked.
+      </p>
+
+      <div class="disqualification-code">
+        STATUS: DISQUALIFIED FOR CHEATING<br>
+        STUDENT: <span id="term-student-name">--</span> (<span id="term-student-roll">--</span>)<br>
+        VIOLATION: <span id="term-reason">Tab Switch / Minimize</span><br>
+        RECORDED AT: <span id="term-time">--</span>
+      </div>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
+        This incident report has been securely transmitted to the college examination controller and invigilation server. You must report immediately to your exam supervisor.
+      </p>
+    </div>
+  </div>
+
+  <!-- Stage 4: Successful Submission Screen -->
+  <div id="success-screen" class="container hidden">
+    <div class="success-box">
+      <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">✅</div>
+      <h1 style="color: var(--success-color); font-size: 1.75rem; margin-bottom: 0.75rem;">Exam Completed Successfully</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+        Your submission receipt has been logged.
+      </p>
+      <div style="background-color: var(--bg-primary); padding: 1.25rem; border-radius: var(--radius-sm); margin-bottom: 1.5rem; text-align: left; font-size: 0.9rem;">
+        <p><strong>Candidate Name:</strong> <span id="success-name">--</span></p>
+        <p><strong>Roll Number:</strong> <span id="success-roll">--</span></p>
+        <p><strong>Submission Time:</strong> <span id="success-time">--</span></p>
+        <p><strong>Integrity Status:</strong> <span style="color: var(--success-color); font-weight: 700;">Verified (No disqualifying strikes)</span></p>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.85rem;">You may now safely close your browser window.</p>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/proctor.js"></script>
+  <script>
+    // Adapt button text if fullscreen is not supported (e.g. iOS Safari)
+    if (window.proctor && !window.proctor.isFullscreenSupported) {
+      const btn = document.getElementById('btn-start');
+      if (btn) btn.textContent = '🔒 Enter Secure Mobile Exam';
+    }
+
+    document.getElementById('student-login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // Mobile browser policy: must unlock AudioContext inside user tap gesture!
+      if (window.proctor && typeof window.proctor.unlockAudio === 'function') {
+        window.proctor.unlockAudio();
+      }
+
+      const name = document.getElementById('student-name').value.trim();
+      const rollNo = document.getElementById('student-roll').value.trim();
+      const section = document.getElementById('student-section').value.trim();
+
+      const btn = document.getElementById('btn-start');
+      btn.disabled = true;
+      btn.textContent = 'Connecting to Secure Session...';
+
+      try {
+        const response = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, rollNo, section })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          proctor.startExam(data.student, data.config);
+        } else {
+          alert('Registration Error: ' + (data.error || 'Unable to join exam'));
+          btn.disabled = false;
+          btn.textContent = window.proctor.isFullscreenSupported ? '🔒 Enter Fullscreen & Start Exam' : '🔒 Enter Secure Mobile Exam';
+        }
+      } catch (err) {
+        alert('Server connection error. Please ensure the device is connected to the same Wi-Fi network.');
+        btn.disabled = false;
+        btn.textContent = window.proctor.isFullscreenSupported ? '🔒 Enter Fullscreen & Start Exam' : '🔒 Enter Secure Mobile Exam';
+      }
+    });
+  </script>
+</body>
+</html>
+

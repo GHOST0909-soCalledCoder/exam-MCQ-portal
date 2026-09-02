@@ -44,6 +44,37 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname)); // Fallback if files were uploaded to root
+
+// Explicit route for student exam portal (/)
+app.get('/', (req, res) => {
+  const possiblePaths = [
+    path.join(__dirname, 'public', 'index.html'),
+    path.join(__dirname, 'index.html')
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) return res.sendFile(p);
+  }
+  res.status(404).send(`
+    <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+      <h2 style="color: #ef4444;">⚠️ Frontend Files Missing</h2>
+      <p>The Node.js server is running perfectly on Render, but the <b>public/</b> folder was not uploaded to your GitHub repository.</p>
+      <p>Please upload the <b>public/</b> folder (containing index.html, admin.html, css, js) to your GitHub repository to view the portal.</p>
+    </div>
+  `);
+});
+
+// Explicit route for proctor dashboard (/admin)
+app.get('/admin', (req, res) => {
+  const possiblePaths = [
+    path.join(__dirname, 'public', 'admin.html'),
+    path.join(__dirname, 'admin.html')
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) return res.sendFile(p);
+  }
+  res.status(404).send('<h2>admin.html not found. Please upload the public folder to GitHub.</h2>');
+});
 
 // In-memory socket maps for ultra-fast messaging
 const studentSockets = new Map(); // studentId -> Set of ws

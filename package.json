@@ -1,0 +1,16 @@
+{
+  "name": "anti-cheat-mcq-portal",
+  "version": "1.0.0",
+  "description": "Anti-Cheat Google Form MCQ Exam Proctoring Portal for Colleges",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test:load": "node test_load.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
+

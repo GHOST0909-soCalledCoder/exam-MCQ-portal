@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher / Proctoring Dashboard - MCQ Exam Monitor</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .admin-nav-btn {
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background-color: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      text-decoration: none;
+    }
+    .admin-nav-btn:hover {
+      background-color: var(--bg-card);
+    }
+    .filter-btn {
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      padding: 0.4rem 0.8rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .filter-btn.active {
+      background: var(--accent-primary);
+      color: white;
+      border-color: var(--accent-primary);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Admin Header -->
+  <header class="admin-header">
+    <div class="brand-badge">
+      <div class="icon">🛡️</div>
+      <span>Teacher Proctoring Command Center</span>
+    </div>
+    <div style="display: flex; gap: 0.75rem; align-items: center;">
+      <span id="ws-status" class="badge badge-live">
+        <span class="dot-pulse"></span>
+        LIVE MONITOR CONNECTED
+      </span>
+      <a href="/api/export-csv" class="admin-nav-btn" download>
+        📥 Export CSV Report
+      </a>
+      <a href="/" target="_blank" class="admin-nav-btn">
+        🔗 Open Student Portal
+      </a>
+    </div>
+  </header>
+
+  <div class="container">
+    
+    <!-- Real-time Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">Total Registered</span>
+        <span id="stat-total" class="stat-value">0</span>
+      </div>
+      <div class="stat-card success">
+        <span class="stat-label">Active in Exam</span>
+        <span id="stat-active" class="stat-value">0</span>
+      </div>
+      <div class="stat-card warning">
+        <span class="stat-label">Warned (Strike 1)</span>
+        <span id="stat-warned" class="stat-value">0</span>
+      </div>
+      <div class="stat-card danger">
+        <span class="stat-label">Disqualified (Strike 2)</span>
+        <span id="stat-terminated" class="stat-value">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Completed Form</span>
+        <span id="stat-completed" class="stat-value">0</span>
+      </div>
+    </div>
+
+    <!-- Exam Configuration Box -->
+    <div class="admin-section">
+      <div class="admin-section-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          ⚙️ Exam Configuration & Google Form Link
+        </h3>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">Changes apply automatically to all incoming students</span>
+      </div>
+
+      <form id="config-form" style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 1rem; align-items: flex-end;">
+        <div>
+          <label class="form-label" for="cfg-form-url">Google Form Embed Link</label>
+          <input type="url" id="cfg-form-url" class="form-input" placeholder="https://docs.google.com/forms/d/e/.../viewform?embedded=true" required>
+        </div>
+        <div>
+          <label class="form-label" for="cfg-title">Exam Title</label>
+          <input type="text" id="cfg-title" class="form-input" placeholder="e.g. Mid-Term MCQ Quiz" required>
+        </div>
+        <div>
+          <label class="form-label" for="cfg-duration">Duration (Minutes)</label>
+          <input type="number" id="cfg-duration" class="form-input" min="5" max="300" value="60" required>
+        </div>
+        <button type="submit" class="btn" style="height: 42px; margin-bottom: 2px;">
+          Save Config
+        </button>
+      </form>
+    </div>
+
+    <!-- Live Event Feed -->
+    <div class="admin-section">
+      <div class="admin-section-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          🚨 Live Infraction & Incident Feed
+        </h3>
+        <button class="btn btn-secondary" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="admin.clearEventsUI()">
+          Clear Feed
+        </button>
+      </div>
+      <div id="event-log-container" class="event-log">
+        <div style="color: var(--text-muted); font-style: italic;">Listening for student infractions in real time...</div>
+      </div>
+    </div>
+
+    <!-- Live Students Monitoring Grid -->
+    <div class="admin-section">
+      <div class="admin-section-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          👥 Active Student Roster (<span id="student-count-badge">0</span>)
+        </h3>
+
+        <!-- Filters & Search -->
+        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="search-input" class="form-input" placeholder="🔍 Search Roll No or Name..." style="width: 220px; padding: 0.4rem 0.75rem; font-size: 0.85rem;" oninput="admin.renderStudents()">
+          
+          <div style="display: flex; gap: 0.35rem;">
+            <button class="filter-btn active" data-filter="all" onclick="admin.setFilter('all')">All</button>
+            <button class="filter-btn" data-filter="active" onclick="admin.setFilter('active')">Active</button>
+            <button class="filter-btn" data-filter="warned" onclick="admin.setFilter('warned')">Warned</button>
+            <button class="filter-btn" data-filter="terminated" onclick="admin.setFilter('terminated')">Disqualified</button>
+            <button class="filter-btn" data-filter="completed" onclick="admin.setFilter('completed')">Completed</button>
+          </div>
+
+          <button class="btn btn-secondary" style="width: auto; padding: 0.4rem 0.85rem; font-size: 0.85rem;" onclick="admin.broadcastPrompt()">
+            📢 Broadcast Message
+          </button>
+          <button class="btn btn-danger" style="width: auto; padding: 0.4rem 0.85rem; font-size: 0.85rem;" onclick="admin.clearAllRecords()">
+            🗑️ Reset Exam Roster
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Roll Number</th>
+              <th>Student Name</th>
+              <th>Section</th>
+              <th>Status</th>
+              <th>Strikes</th>
+              <th>Join Time</th>
+              <th>Latest Violation</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="student-table-body">
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                No students have joined the examination session yet.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>
+

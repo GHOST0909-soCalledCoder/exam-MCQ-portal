@@ -1,0 +1,180 @@
+{
+  "config": {
+    "examTitle": "test",
+    "formUrl": "https://docs.google.com/forms/d/e/1FAIpQLSd-PjZnx1jxPjFjnn58gMrHd6elziU-tBtcsLJKK2-m235L_Q/viewform?usp=send_form&embedded=true",
+    "durationMinutes": 60,
+    "maxStrikes": 2,
+    "requireFullscreen": true,
+    "blockShortcuts": true,
+    "active": true
+  },
+  "students": {
+    "HJ": {
+      "id": "HJ",
+      "rollNo": "HJ",
+      "name": "Bn",
+      "section": "Nj",
+      "ip": "192.168.0.204",
+      "startTime": 1788341077280,
+      "lastPing": 1788341097417,
+      "strikes": 2,
+      "status": "terminated",
+      "violations": [
+        {
+          "strike": 1,
+          "type": "Floating Window / Search Overlay Active",
+          "details": "External app or search window running over exam",
+          "timestamp": 1788341083358
+        },
+        {
+          "strike": 2,
+          "type": "External Window / Overlay Detected",
+          "details": "Browser lost focus to floating app or overlay",
+          "timestamp": 1788341090292
+        }
+      ],
+      "terminatedAt": 1788341090292
+    },
+    "HH": {
+      "id": "HH",
+      "rollNo": "HH",
+      "name": "Hj",
+      "section": "Hh",
+      "ip": "192.168.0.204",
+      "startTime": 1788341109621,
+      "lastPing": 1788341142273,
+      "strikes": 2,
+      "status": "terminated",
+      "violations": [
+        {
+          "strike": 1,
+          "type": "Floating Window / Search Overlay Active",
+          "details": "External app or search window running over exam",
+          "timestamp": 1788341136650
+        },
+        {
+          "strike": 2,
+          "type": "External Window / Overlay Detected",
+          "details": "Browser lost focus to floating app or overlay",
+          "timestamp": 1788341142273
+        }
+      ],
+      "terminatedAt": 1788341142273
+    },
+    "BUB": {
+      "id": "BUB",
+      "rollNo": "BUB",
+      "name": "Ub6",
+      "section": "Bun",
+      "ip": "192.168.0.204",
+      "startTime": 1788341153964,
+      "lastPing": 1788341161362,
+      "strikes": 2,
+      "status": "terminated",
+      "violations": [
+        {
+          "strike": 1,
+          "type": "App Minimized / Tab Switched",
+          "details": "Page visibility changed to hidden",
+          "timestamp": 1788341157289
+        },
+        {
+          "strike": 2,
+          "type": "External Window / Overlay Detected",
+          "details": "Browser lost focus to floating app or overlay",
+          "timestamp": 1788341161362
+        }
+      ],
+      "terminatedAt": 1788341161362
+    }
+  },
+  "events": [
+    {
+      "id": "1788341161362-16q6g",
+      "time": "2026-09-02T09:26:01.362Z",
+      "timestamp": 1788341161362,
+      "type": "TERMINATE",
+      "studentId": "BUB",
+      "name": "Ub6",
+      "strike": 2,
+      "message": "🚨 EXAM AUTO-TERMINATED (Strike 2/2) - External Window / Overlay Detected"
+    },
+    {
+      "id": "1788341157289-p2ruv",
+      "time": "2026-09-02T09:25:57.289Z",
+      "timestamp": 1788341157289,
+      "type": "WARNING",
+      "studentId": "BUB",
+      "name": "Ub6",
+      "strike": 1,
+      "message": "⚠️ Strike 1/2 - App Minimized / Tab Switched"
+    },
+    {
+      "id": "1788341153964-b8hfp",
+      "time": "2026-09-02T09:25:53.964Z",
+      "timestamp": 1788341153964,
+      "type": "JOIN",
+      "studentId": "BUB",
+      "name": "Ub6",
+      "message": "Student joined the exam room"
+    },
+    {
+      "id": "1788341142273-pjofm",
+      "time": "2026-09-02T09:25:42.273Z",
+      "timestamp": 1788341142273,
+      "type": "TERMINATE",
+      "studentId": "HH",
+      "name": "Hj",
+      "strike": 2,
+      "message": "🚨 EXAM AUTO-TERMINATED (Strike 2/2) - External Window / Overlay Detected"
+    },
+    {
+      "id": "1788341136650-qbts4",
+      "time": "2026-09-02T09:25:36.650Z",
+      "timestamp": 1788341136650,
+      "type": "WARNING",
+      "studentId": "HH",
+      "name": "Hj",
+      "strike": 1,
+      "message": "⚠️ Strike 1/2 - Floating Window / Search Overlay Active"
+    },
+    {
+      "id": "1788341109621-mcegq",
+      "time": "2026-09-02T09:25:09.621Z",
+      "timestamp": 1788341109621,
+      "type": "JOIN",
+      "studentId": "HH",
+      "name": "Hj",
+      "message": "Student joined the exam room"
+    },
+    {
+      "id": "1788341090292-fap8z",
+      "time": "2026-09-02T09:24:50.292Z",
+      "timestamp": 1788341090292,
+      "type": "TERMINATE",
+      "studentId": "HJ",
+      "name": "Bn",
+      "strike": 2,
+      "message": "🚨 EXAM AUTO-TERMINATED (Strike 2/2) - External Window / Overlay Detected"
+    },
+    {
+      "id": "1788341083358-fqpwt",
+      "time": "2026-09-02T09:24:43.358Z",
+      "timestamp": 1788341083358,
+      "type": "WARNING",
+      "studentId": "HJ",
+      "name": "Bn",
+      "strike": 1,
+      "message": "⚠️ Strike 1/2 - Floating Window / Search Overlay Active"
+    },
+    {
+      "id": "1788341077281-4gw1s",
+      "time": "2026-09-02T09:24:37.281Z",
+      "timestamp": 1788341077281,
+      "type": "JOIN",
+      "studentId": "HJ",
+      "name": "Bn",
+      "message": "Student joined the exam room"
+    }
+  ]
+}

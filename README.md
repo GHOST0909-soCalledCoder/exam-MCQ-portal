@@ -48,11 +48,11 @@ To let all 400 students connect from college lab computers or laptops:
 1. Find your host computer's local IP address (e.g., `192.168.1.100` on Windows by running `ipconfig`).
 2. Share the URL with students:
    ```
-   http://192.168.1.100:3000
+  
    ```
 3. Open the Teacher Dashboard on the teacher's PC:
    ```
-   http://192.168.1.100:3000/admin
+   
    ```
 4. Paste your Google Form link into the **Exam Configuration** section and click **Save Config**.
 

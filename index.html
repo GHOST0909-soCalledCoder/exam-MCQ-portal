@@ -44,6 +44,13 @@
 
       <form id="student-login-form">
         <div class="form-group">
+          <label class="form-label" for="student-exam-select">Select Examination / Subject *</label>
+          <select id="student-exam-select" class="form-input" required style="cursor: pointer; background-color: var(--bg-surface); font-weight: 500;">
+            <option value="" disabled selected>-- Loading Available Exams... --</option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label class="form-label" for="student-name">Full Name *</label>
           <input type="text" id="student-name" class="form-input" placeholder="e.g. John Doe" required autocomplete="name">
         </div>
@@ -62,10 +69,6 @@
           🔒 Enter Fullscreen & Start Exam
         </button>
       </form>
-
-      <p style="text-align: center; font-size: 0.8rem; color: var(--text-muted); margin-top: 1.5rem;">
-        Invigilator / Teacher? <a href="/admin" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">Open Proctor Dashboard</a>
-      </p>
     </div>
   </main>
 
@@ -82,13 +85,32 @@
         <div id="exam-timer" class="badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa;">⏱️ 60:00</div>
         <div id="strike-badge" class="badge badge-live">
           <span class="dot-pulse"></span>
-          STRIKES: 0 / 2
+          STRIKES: 0 / 3
         </div>
       </div>
     </header>
 
     <!-- Full-screen Iframe Container -->
     <div class="iframe-container">
+      <!-- Time Over Sticky Lockdown Banner -->
+      <div id="submission-lock-banner" class="submission-lock-banner hidden">
+        <span>🔒 <strong>TIME OVER - SUBMISSION LOCKDOWN:</strong> Question answering is closed. Scroll to the bottom and click <strong>Submit</strong> on your Google Form.</span>
+      </div>
+
+      <!-- Question Blocker Overlay (blocks touches on upper questions area, bottom submit area stays accessible) -->
+      <div id="question-blocker-overlay" class="question-blocker-overlay hidden" onclick="proctor.notifyQuestionLocked()">
+        <div style="background: rgba(15, 23, 42, 0.94); border: 2px solid #ef4444; border-radius: 12px; padding: 1.25rem 1.5rem; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.7);">
+          <div style="font-size: 2.25rem; margin-bottom: 0.25rem;">🔒</div>
+          <h3 style="color: #f87171; margin-bottom: 0.4rem; font-size: 1.15rem; font-weight: 700;">Question Answering Locked</h3>
+          <p style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.5; margin-bottom: 0.75rem;">
+            Exam time has ended. You cannot modify your answers anymore.
+          </p>
+          <div style="font-size: 0.82rem; background: rgba(239, 68, 68, 0.15); border: 1px dashed #ef4444; color: #fca5a5; padding: 0.5rem; border-radius: 6px; font-weight: 600;">
+            ⬇️ Scroll down to the bottom of the screen to tap the <strong>"Submit"</strong> button.
+          </div>
+        </div>
+      </div>
+
       <iframe id="google-form-iframe" src="about:blank" allow="autoplay"></iframe>
     </div>
 
@@ -109,17 +131,17 @@
     </div>
   </div>
 
-  <!-- Warning Modal (Strike 1) -->
+  <!-- Warning Modal (Strike 1 & Strike 2) -->
   <div id="warning-modal" class="warning-overlay hidden">
     <div class="warning-dialog">
       <div class="warning-icon">⚠️</div>
-      <h2 class="warning-title">SECURITY WARNING: STRIKE <span id="strike-count-text">1 OF 2</span></h2>
+      <h2 class="warning-title">SECURITY WARNING: STRIKE <span id="strike-count-text">1 OF 3</span></h2>
       <p class="warning-message">
         A cheating violation was detected:
         <br><strong id="warning-reason-text" style="color: var(--danger-border);">Tab Switch / Window Minimize</strong>
       </p>
-      <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
-        Your action has been logged on the Proctor's live monitor. <strong>One more infraction will immediately terminate your exam and forfeit your submission!</strong>
+      <p id="warning-subtext" style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+        Your action has been logged on the Proctor's live monitor. <strong>Reaching 3 strikes will immediately terminate your exam and forfeit your submission!</strong>
       </p>
 
       <button class="btn btn-danger" onclick="proctor.dismissWarning()">
@@ -128,13 +150,31 @@
     </div>
   </div>
 
-  <!-- Stage 3: Auto-Termination & Disqualification Screen (Strike 2) -->
+  <!-- Time-Over Modal (Triggered automatically when timer reaches 00:00) -->
+  <div id="time-over-modal" class="warning-overlay hidden" style="background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px);">
+    <div class="warning-dialog" style="border-color: #f59e0b; box-shadow: 0 25px 50px -12px rgba(245, 158, 11, 0.45);">
+      <div class="warning-icon" style="background-color: rgba(245, 158, 11, 0.2); color: #f59e0b; font-size: 2.5rem;">⏰</div>
+      <h2 class="warning-title" style="color: #f59e0b; font-size: 1.6rem; font-weight: 800;">EXAM TIME HAS ENDED!</h2>
+      <p class="warning-message" style="font-size: 1.05rem; margin-bottom: 1.25rem; line-height: 1.6;">
+        Your allotted examination time has reached <strong>00:00</strong>.
+        <br><br>
+        <strong>Question answering is now locked.</strong>
+        <br>
+        Click the button below to return to your form, scroll to the bottom, and tap <strong>Submit</strong>.
+      </p>
+      <button type="button" class="btn btn-success" style="font-size: 1.05rem; padding: 0.85rem 1.5rem; font-weight: 700; width: 100%; border-radius: var(--radius-sm);" onclick="proctor.proceedToFormSubmission()">
+        ⬇️ Submit Your Exam Now
+      </button>
+    </div>
+  </div>
+
+  <!-- Stage 3: Auto-Termination & Disqualification Screen (Strike 3) -->
   <div id="termination-screen" class="termination-screen hidden">
     <div class="termination-box">
       <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">🚨</div>
       <h1>EXAMINATION AUTO-TERMINATED</h1>
       <p style="color: #fca5a5; font-size: 1.1rem; margin-bottom: 1.5rem;">
-        You have exceeded the maximum allowed security strikes (2/2). Access to the examination form has been revoked.
+        You have exceeded the maximum allowed security strikes (3/3). Access to the examination form has been revoked.
       </p>
 
       <div class="disqualification-code">
@@ -177,12 +217,61 @@
       if (btn) btn.textContent = '🔒 Enter Secure Mobile Exam';
     }
 
+    // Dynamically load active exams created by teachers
+    async function loadAvailableExams() {
+      const select = document.getElementById('student-exam-select');
+      if (!select) return;
+
+      try {
+        const res = await fetch('/api/exams?activeOnly=true');
+        const data = await res.json();
+
+        if (data.success && data.exams && data.exams.length > 0) {
+          select.innerHTML = '';
+          
+          // Check if URL has ?exam=... parameter for direct subject link
+          const urlParams = new URLSearchParams(window.location.search);
+          const targetExamId = urlParams.get('exam');
+
+          data.exams.forEach(exam => {
+            const opt = document.createElement('option');
+            opt.value = exam.id;
+            opt.textContent = `📘 ${exam.title} (${exam.durationMinutes} mins) - ${exam.teacherName || 'Faculty'}`;
+            if (targetExamId && exam.id === targetExamId) {
+              opt.selected = true;
+            }
+            select.appendChild(opt);
+          });
+
+          if (!select.value && select.options.length > 0) {
+            select.options[0].selected = true;
+          }
+        } else {
+          select.innerHTML = '<option value="" disabled selected>⚠️ No active exams currently scheduled</option>';
+        }
+      } catch (err) {
+        console.error('Error fetching exams:', err);
+        select.innerHTML = '<option value="exam-default" selected>📘 General MCQ Examination (60 mins)</option>';
+      }
+    }
+
+    // Load available exams on page load
+    loadAvailableExams();
+
     document.getElementById('student-login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
 
       // Mobile browser policy: must unlock AudioContext inside user tap gesture!
       if (window.proctor && typeof window.proctor.unlockAudio === 'function') {
         window.proctor.unlockAudio();
+      }
+
+      const examSelect = document.getElementById('student-exam-select');
+      const examId = examSelect ? examSelect.value : null;
+
+      if (!examId) {
+        alert('Please select an active examination from the list.');
+        return;
       }
 
       const name = document.getElementById('student-name').value.trim();
@@ -197,19 +286,19 @@
         const response = await fetch('/api/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, rollNo, section })
+          body: JSON.stringify({ name, rollNo, section, examId })
         });
         const data = await response.json();
 
         if (data.success) {
-          proctor.startExam(data.student, data.config);
+          proctor.startExam(data.student, data.exam || data.config);
         } else {
           alert('Registration Error: ' + (data.error || 'Unable to join exam'));
           btn.disabled = false;
           btn.textContent = window.proctor.isFullscreenSupported ? '🔒 Enter Fullscreen & Start Exam' : '🔒 Enter Secure Mobile Exam';
         }
       } catch (err) {
-        alert('Server connection error. Please ensure the device is connected to the same Wi-Fi network.');
+        alert('Server connection error. Please verify your connection.');
         btn.disabled = false;
         btn.textContent = window.proctor.isFullscreenSupported ? '🔒 Enter Fullscreen & Start Exam' : '🔒 Enter Secure Mobile Exam';
       }

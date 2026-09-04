@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const path = require('path');
@@ -117,7 +118,80 @@ function sendToStudent(studentId, payload) {
 
 // ==================== REST API ROUTES ====================
 
-// Get current exam configuration
+// Get all exams or active exams
+app.get('/api/exams', (req, res) => {
+  const activeOnly = req.query.activeOnly === 'true';
+  const exams = activeOnly ? db.getActiveExams() : db.getAllExams();
+  res.json({ success: true, exams });
+});
+
+// Create a new exam (Teacher)
+app.post('/api/exams', async (req, res) => {
+  try {
+    const { title, formUrl, durationMinutes, teacherName, maxStrikes, active } = req.body;
+    if (!title || !formUrl) {
+      return res.status(400).json({ success: false, error: 'Exam Title and Google Form URL are required.' });
+    }
+
+    const resolvedFormUrl = await normalizeFormUrl(formUrl);
+    const newExam = db.createExam({
+      title,
+      formUrl: resolvedFormUrl,
+      durationMinutes: durationMinutes || 60,
+      teacherName: teacherName || 'Faculty',
+      maxStrikes: maxStrikes || 3,
+      active: active !== false
+    });
+
+    broadcastToAdmins({ type: 'EXAM_CREATED', exam: newExam, exams: db.getAllExams() });
+    broadcastToStudents({ type: 'EXAMS_UPDATED', exams: db.getActiveExams() });
+
+    res.json({ success: true, exam: newExam });
+  } catch (err) {
+    console.error('Error creating exam:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update an exam (Teacher)
+app.put('/api/exams/:id', async (req, res) => {
+  try {
+    const examId = req.params.id;
+    const updates = { ...req.body };
+    if (updates.formUrl) {
+      updates.formUrl = await normalizeFormUrl(updates.formUrl);
+    }
+
+    const updated = db.updateExam(examId, updates);
+    if (!updated) {
+      return res.status(404).json({ success: false, error: 'Exam not found' });
+    }
+
+    broadcastToAdmins({ type: 'EXAM_UPDATED', exam: updated, exams: db.getAllExams() });
+    broadcastToStudents({ type: 'EXAMS_UPDATED', exams: db.getActiveExams() });
+
+    res.json({ success: true, exam: updated });
+  } catch (err) {
+    console.error('Error updating exam:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete an exam (Teacher)
+app.delete('/api/exams/:id', (req, res) => {
+  const examId = req.params.id;
+  const deleted = db.deleteExam(examId);
+  if (!deleted) {
+    return res.status(404).json({ success: false, error: 'Exam not found' });
+  }
+
+  broadcastToAdmins({ type: 'EXAM_DELETED', examId, exams: db.getAllExams() });
+  broadcastToStudents({ type: 'EXAMS_UPDATED', exams: db.getActiveExams() });
+
+  res.json({ success: true, message: 'Exam deleted successfully' });
+});
+
+// Get current global config
 app.get('/api/config', (req, res) => {
   res.json({
     success: true,
@@ -125,7 +199,7 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// Update exam configuration (Admin)
+// Update global config (Admin)
 app.post('/api/config', async (req, res) => {
   const body = req.body;
   if (body.formUrl) {
@@ -139,25 +213,32 @@ app.post('/api/config', async (req, res) => {
 
 // Register / Login student before exam
 app.post('/api/register', (req, res) => {
-  const { name, rollNo, section } = req.body;
+  const { name, rollNo, section, examId } = req.body;
   if (!name || !rollNo) {
     return res.status(400).json({ success: false, error: 'Name and Roll Number are required' });
   }
 
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-  const student = db.registerStudent({ name, rollNo, section, ip: clientIp });
-  const config = db.getConfig();
+  const student = db.registerStudent({ name, rollNo, section, ip: clientIp, examId });
+  const exam = db.getExam(student.examId);
 
   broadcastToAdmins({
     type: 'STUDENT_JOINED',
     student: student,
-    stats: db.getStats()
+    stats: db.getStats(student.examId)
   });
 
   res.json({
     success: true,
     student,
-    config
+    exam: exam || {
+      id: 'exam-default',
+      title: student.examTitle || 'MCQ Exam',
+      formUrl: db.getConfig().formUrl,
+      durationMinutes: db.getConfig().durationMinutes || 60,
+      maxStrikes: 3
+    },
+    config: db.getConfig()
   });
 });
 
@@ -176,8 +257,8 @@ app.post('/api/violation', (req, res) => {
   broadcastToAdmins({
     type: 'VIOLATION_RECORDED',
     student: updatedStudent,
-    stats: db.getStats(),
-    events: db.getEvents(10)
+    stats: db.getStats(updatedStudent.examId),
+    events: db.getEvents(10, updatedStudent.examId)
   });
 
   // If terminated, push terminate command to student's sockets
@@ -207,19 +288,21 @@ app.post('/api/complete', (req, res) => {
   broadcastToAdmins({
     type: 'STUDENT_COMPLETED',
     student: student,
-    stats: db.getStats()
+    stats: db.getStats(student.examId)
   });
 
   res.json({ success: true, student });
 });
 
-// Admin: Get all students and stats
+// Admin: Get all students and stats (supports ?examId=... filter)
 app.get('/api/students', (req, res) => {
+  const examId = req.query.examId || null;
   res.json({
     success: true,
-    stats: db.getStats(),
-    students: db.getAllStudents(),
-    events: db.getEvents(50)
+    stats: db.getStats(examId),
+    students: db.getAllStudents(examId),
+    events: db.getEvents(50, examId),
+    exams: db.getAllExams()
   });
 });
 
@@ -236,53 +319,117 @@ app.post('/api/students/:id/reset', (req, res) => {
   broadcastToAdmins({
     type: 'STUDENT_PARDONED',
     student: student,
-    stats: db.getStats()
+    stats: db.getStats(student.examId)
   });
 
   res.json({ success: true, student });
 });
 
-// Admin: Clear student records for new test session
-app.post('/api/clear-records', (req, res) => {
-  db.clearAllData();
-  broadcastToAdmins({
-    type: 'DATA_CLEARED',
-    stats: db.getStats(),
-    students: [],
-    events: []
+// Controller: Set security exemption for a student (bypasses all anti-cheat rules)
+app.post('/api/students/:id/exemption', (req, res) => {
+  const studentId = req.params.id;
+  const { exempt } = req.body;
+  const student = db.setStudentExemption(studentId, exempt);
+  if (!student) {
+    return res.status(404).json({ success: false, error: 'Student not found' });
+  }
+
+  // Push real-time exemption instruction to student device
+  sendToStudent(studentId, {
+    type: 'SECURITY_EXEMPTION',
+    exempt: student.exempt
   });
-  res.json({ success: true, message: 'All exam records cleared' });
+
+  // Broadcast to all admins and controllers
+  broadcastToAdmins({
+    type: 'STUDENT_EXEMPTION_UPDATED',
+    student,
+    stats: db.getStats(student.examId)
+  });
+
+  res.json({ success: true, student });
 });
 
-// Admin: Export CSV report of student infractions
-app.get('/api/export-csv', (req, res) => {
-  const students = db.getAllStudents();
-  const config = db.getConfig();
+// Controller: Batch set security exemption for multiple students
+app.post('/api/students/batch-exemption', (req, res) => {
+  const { studentIds, exempt } = req.body;
+  if (!Array.isArray(studentIds) || studentIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'studentIds array is required.' });
+  }
 
-  let csv = 'Roll Number,Name,Section,Status,Strikes,Start Time,End Time,Total Violations,Violation Log\n';
+  const updatedStudents = db.batchSetStudentExemption(studentIds, exempt);
+  for (const s of updatedStudents) {
+    sendToStudent(s.id, {
+      type: 'SECURITY_EXEMPTION',
+      exempt: s.exempt
+    });
+  }
+
+  broadcastToAdmins({
+    type: 'BATCH_EXEMPTION_UPDATED',
+    students: updatedStudents,
+    stats: db.getStats()
+  });
+
+  res.json({ success: true, count: updatedStudents.length, students: updatedStudents });
+});
+
+// Admin: Clear student records for new test session (optionally for a specific exam)
+app.post('/api/clear-records', (req, res) => {
+  const examId = req.body.examId || null;
+  db.clearAllData(examId);
+  broadcastToAdmins({
+    type: 'DATA_CLEARED',
+    examId,
+    stats: db.getStats(examId),
+    students: db.getAllStudents(examId),
+    events: []
+  });
+  res.json({ success: true, message: 'Exam records cleared' });
+});
+
+// Admin: Export CSV report of student infractions (supports ?examId=... filter)
+app.get('/api/export-csv', (req, res) => {
+  const examId = req.query.examId || null;
+  const students = db.getAllStudents(examId);
+
+  let csv = 'Roll Number,Name,Section,Exam,Status,Security Mode,Strikes,Start Time,End Time,Total Violations,Violation Log\n';
 
   for (const s of students) {
     const startTimeStr = s.startTime ? new Date(s.startTime).toLocaleString() : 'N/A';
     const endTimeStr = s.completedAt ? new Date(s.completedAt).toLocaleString() : (s.terminatedAt ? new Date(s.terminatedAt).toLocaleString() : 'In Progress');
+    const secMode = s.exempt ? 'EXEMPT (Bypassed)' : 'Enforced';
     
     // Format violations list
     const logDetails = (s.violations || []).map(v => `[${new Date(v.timestamp).toLocaleTimeString()}] ${v.type} (${v.details || ''})`).join('; ');
 
     const safeName = `"${(s.name || '').replace(/"/g, '""')}"`;
     const safeSection = `"${(s.section || '').replace(/"/g, '""')}"`;
+    const safeExam = `"${(s.examTitle || 'General Exam').replace(/"/g, '""')}"`;
     const safeLog = `"${logDetails.replace(/"/g, '""')}"`;
 
-    csv += `${s.rollNo},${safeName},${safeSection},${s.status.toUpperCase()},${s.strikes},"${startTimeStr}","${endTimeStr}",${s.violations ? s.violations.length : 0},${safeLog}\n`;
+    csv += `${s.rollNo},${safeName},${safeSection},${safeExam},${s.status.toUpperCase()},${secMode},${s.strikes},"${startTimeStr}","${endTimeStr}",${s.violations ? s.violations.length : 0},${safeLog}\n`;
+  }
+
+  let filename = `All_Exams_Report_${Date.now()}.csv`;
+  if (examId && examId !== 'all') {
+    const targetExam = db.getExam(examId);
+    const safeTitle = targetExam ? targetExam.title.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Exam';
+    filename = `${safeTitle}_Report_${Date.now()}.csv`;
   }
 
   res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename=Exam_Report_${Date.now()}.csv`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(csv);
 });
 
 // Navigation helper routes
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/controller', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'controller.html'));
 });
 
 // ==================== WEBSOCKET HANDLING ====================
@@ -306,6 +453,7 @@ wss.on('connection', (ws, req) => {
             ws.send(JSON.stringify({
               type: 'INIT_ADMIN',
               config: db.getConfig(),
+              exams: db.getAllExams(),
               stats: db.getStats(),
               students: db.getAllStudents(),
               events: db.getEvents(50)
@@ -317,6 +465,15 @@ wss.on('connection', (ws, req) => {
             }
             studentSockets.get(boundStudentId).add(ws);
             db.updatePing(boundStudentId);
+
+            // If student has an active security exemption, immediately notify their client
+            const activeStudent = db.getStudent(boundStudentId);
+            if (activeStudent && activeStudent.exempt) {
+              ws.send(JSON.stringify({
+                type: 'SECURITY_EXEMPTION',
+                exempt: true
+              }));
+            }
           }
           break;
 
@@ -335,12 +492,13 @@ wss.on('connection', (ws, req) => {
           if (boundStudentId && data.violationType) {
             const student = db.recordViolation(boundStudentId, data.violationType, data.details || '');
             if (student) {
+              const maxStrikes = student.maxStrikes || 3;
               // Send response back to student
               ws.send(JSON.stringify({
                 type: 'VIOLATION_ACK',
                 strikes: student.strikes,
                 status: student.status,
-                maxStrikes: db.getConfig().maxStrikes,
+                maxStrikes: maxStrikes,
                 violationType: data.violationType
               }));
 
@@ -348,8 +506,9 @@ wss.on('connection', (ws, req) => {
               broadcastToAdmins({
                 type: 'VIOLATION_RECORDED',
                 student,
-                stats: db.getStats(),
-                events: db.getEvents(10)
+                examId: student.examId,
+                stats: db.getStats(student.examId),
+                events: db.getEvents(10, student.examId)
               });
 
               if (student.status === 'terminated') {
@@ -387,6 +546,40 @@ wss.on('connection', (ws, req) => {
                 stats: db.getStats()
               });
             }
+          }
+          break;
+
+        case 'CONTROLLER_SET_EXEMPTION':
+          if (role === 'admin' && data.studentId) {
+            const student = db.setStudentExemption(data.studentId, data.exempt);
+            if (student) {
+              sendToStudent(data.studentId, {
+                type: 'SECURITY_EXEMPTION',
+                exempt: student.exempt
+              });
+              broadcastToAdmins({
+                type: 'STUDENT_EXEMPTION_UPDATED',
+                student,
+                stats: db.getStats(student.examId)
+              });
+            }
+          }
+          break;
+
+        case 'CONTROLLER_BATCH_EXEMPTION':
+          if (role === 'admin' && Array.isArray(data.studentIds)) {
+            const updatedStudents = db.batchSetStudentExemption(data.studentIds, data.exempt);
+            for (const s of updatedStudents) {
+              sendToStudent(s.id, {
+                type: 'SECURITY_EXEMPTION',
+                exempt: s.exempt
+              });
+            }
+            broadcastToAdmins({
+              type: 'BATCH_EXEMPTION_UPDATED',
+              students: updatedStudents,
+              stats: db.getStats()
+            });
           }
           break;
       }

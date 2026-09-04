@@ -52,9 +52,9 @@
         <span class="dot-pulse"></span>
         LIVE MONITOR CONNECTED
       </span>
-      <a href="/api/export-csv" class="admin-nav-btn" download>
+      <button type="button" id="btn-export-csv" class="admin-nav-btn" onclick="admin.openExportModal()">
         📥 Export CSV Report
-      </a>
+      </button>
       <a href="/" target="_blank" class="admin-nav-btn">
         🔗 Open Student Portal
       </a>
@@ -74,11 +74,11 @@
         <span id="stat-active" class="stat-value">0</span>
       </div>
       <div class="stat-card warning">
-        <span class="stat-label">Warned (Strike 1)</span>
+        <span class="stat-label">Warned (Strike 1 & 2)</span>
         <span id="stat-warned" class="stat-value">0</span>
       </div>
       <div class="stat-card danger">
-        <span class="stat-label">Disqualified (Strike 2)</span>
+        <span class="stat-label">Disqualified (Strike 3)</span>
         <span id="stat-terminated" class="stat-value">0</span>
       </div>
       <div class="stat-card">
@@ -87,32 +87,87 @@
       </div>
     </div>
 
-    <!-- Exam Configuration Box -->
+    <!-- Multi-Exam & Subject Management Hub -->
     <div class="admin-section">
       <div class="admin-section-header">
-        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
-          ⚙️ Exam Configuration & Google Form Link
-        </h3>
-        <span style="font-size: 0.8rem; color: var(--text-muted);">Changes apply automatically to all incoming students</span>
+        <div>
+          <h3 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+            📚 Multi-Exam & Subject Management Hub
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">
+            Different teachers can upload separate Google Forms simultaneously. Students select their exam on login.
+          </span>
+        </div>
+        <button class="btn" style="width: auto; padding: 0.45rem 1rem; font-size: 0.85rem;" onclick="admin.toggleCreateExamModal()">
+          ➕ Create / Upload New Exam
+        </button>
       </div>
 
-      <form id="config-form" style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 1rem; align-items: flex-end;">
-        <div>
-          <label class="form-label" for="cfg-form-url">Google Form Embed Link</label>
-          <input type="url" id="cfg-form-url" class="form-input" placeholder="https://docs.google.com/forms/d/e/.../viewform?embedded=true" required>
-        </div>
-        <div>
-          <label class="form-label" for="cfg-title">Exam Title</label>
-          <input type="text" id="cfg-title" class="form-input" placeholder="e.g. Mid-Term MCQ Quiz" required>
-        </div>
-        <div>
-          <label class="form-label" for="cfg-duration">Duration (Minutes)</label>
-          <input type="number" id="cfg-duration" class="form-input" min="5" max="300" value="60" required>
-        </div>
-        <button type="submit" class="btn" style="height: 42px; margin-bottom: 2px;">
-          Save Config
-        </button>
-      </form>
+      <!-- Create Exam Drawer / Inline Form -->
+      <div id="create-exam-panel" class="admin-card" style="margin-bottom: 1.5rem; display: none; background-color: var(--bg-card); border-radius: var(--radius-md); padding: 1.25rem; border: 1px solid var(--border-focus);">
+        <h4 style="margin-bottom: 1rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
+          📝 Add New Examination Google Form
+        </h4>
+        <form id="create-exam-form" style="display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr; gap: 1rem; align-items: flex-end;">
+          <div>
+            <label class="form-label" for="new-exam-title">Exam / Subject Title *</label>
+            <input type="text" id="new-exam-title" class="form-input" placeholder="e.g. Physics Mid-Term MCQ" required>
+          </div>
+          <div>
+            <label class="form-label" for="new-exam-teacher">Faculty / Teacher Name</label>
+            <input type="text" id="new-exam-teacher" class="form-input" placeholder="e.g. Prof. Sharma" required>
+          </div>
+          <div>
+            <label class="form-label" for="new-exam-duration">Duration (Mins)</label>
+            <input type="number" id="new-exam-duration" class="form-input" min="5" max="300" value="60" required>
+          </div>
+          <div>
+            <label class="form-label" for="new-exam-strikes">Max Strikes</label>
+            <select id="new-exam-strikes" class="form-input">
+              <option value="3" selected>3 Strikes (Default)</option>
+              <option value="2">2 Strikes</option>
+              <option value="1">1 Strike (Strict)</option>
+            </select>
+          </div>
+          <div style="grid-column: 1 / -1; display: flex; gap: 1rem; align-items: flex-end;">
+            <div style="flex: 1;">
+              <label class="form-label" for="new-exam-url">Google Form Embed Link *</label>
+              <input type="url" id="new-exam-url" class="form-input" placeholder="https://docs.google.com/forms/d/e/.../viewform?embedded=true or forms.gle/..." required>
+            </div>
+            <button type="submit" class="btn btn-success" style="width: auto; height: 42px; padding: 0 1.5rem; margin-bottom: 2px;">
+              💾 Save & Publish Exam
+            </button>
+            <button type="button" class="btn btn-secondary" style="width: auto; height: 42px; margin-bottom: 2px;" onclick="admin.toggleCreateExamModal()">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Exams Table -->
+      <div class="table-responsive">
+        <table class="data-table" id="exams-table">
+          <thead>
+            <tr>
+              <th>Exam Title</th>
+              <th>Teacher / Subject</th>
+              <th>Duration</th>
+              <th>Strike Limit</th>
+              <th>Status</th>
+              <th>Enrolled</th>
+              <th>Student Direct Link</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="exams-table-body">
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">
+                Loading available examinations...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Live Event Feed -->
@@ -133,13 +188,21 @@
     <!-- Live Students Monitoring Grid -->
     <div class="admin-section">
       <div class="admin-section-header">
-        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
-          👥 Active Student Roster (<span id="student-count-badge">0</span>)
-        </h3>
+        <div>
+          <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+            👥 Active Student Roster (<span id="student-count-badge">0</span>)
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time monitoring across examinations</span>
+        </div>
 
         <!-- Filters & Search -->
         <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-          <input type="text" id="search-input" class="form-input" placeholder="🔍 Search Roll No or Name..." style="width: 220px; padding: 0.4rem 0.75rem; font-size: 0.85rem;" oninput="admin.renderStudents()">
+          <!-- Filter by Exam -->
+          <select id="exam-filter-select" class="form-input" style="width: auto; max-width: 220px; padding: 0.4rem 0.75rem; font-size: 0.85rem;" onchange="admin.onExamFilterChange()">
+            <option value="all">🌐 All Examinations</option>
+          </select>
+
+          <input type="text" id="search-input" class="form-input" placeholder="🔍 Search Roll No or Name..." style="width: 180px; padding: 0.4rem 0.75rem; font-size: 0.85rem;" oninput="admin.renderStudents()">
           
           <div style="display: flex; gap: 0.35rem;">
             <button class="filter-btn active" data-filter="all" onclick="admin.setFilter('all')">All</button>
@@ -150,10 +213,10 @@
           </div>
 
           <button class="btn btn-secondary" style="width: auto; padding: 0.4rem 0.85rem; font-size: 0.85rem;" onclick="admin.broadcastPrompt()">
-            📢 Broadcast Message
+            📢 Broadcast
           </button>
           <button class="btn btn-danger" style="width: auto; padding: 0.4rem 0.85rem; font-size: 0.85rem;" onclick="admin.clearAllRecords()">
-            🗑️ Reset Exam Roster
+            🗑️ Reset Roster
           </button>
         </div>
       </div>
@@ -165,6 +228,7 @@
               <th>Roll Number</th>
               <th>Student Name</th>
               <th>Section</th>
+              <th>Examination</th>
               <th>Status</th>
               <th>Strikes</th>
               <th>Join Time</th>
@@ -174,8 +238,8 @@
           </thead>
           <tbody id="student-table-body">
             <tr>
-              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-                No students have joined the examination session yet.
+              <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                No students have joined this examination session yet.
               </td>
             </tr>
           </tbody>
@@ -183,6 +247,28 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Export CSV Selection Modal -->
+  <div id="export-csv-modal" class="warning-overlay hidden" style="background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px);">
+    <div class="card-center" style="max-width: 480px; margin: 20vh auto; background: var(--bg-surface); border: 1px solid var(--border-focus); padding: 1.75rem; border-radius: var(--radius-md); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7);">
+      <h3 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; color: #60a5fa; font-size: 1.2rem;">
+        📥 Export Examination CSV Report
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+        Choose which examination records you want to download as a spreadsheet report:
+      </p>
+      <div style="margin-bottom: 1.5rem;">
+        <label class="form-label" for="export-exam-select" style="font-weight: 600; margin-bottom: 0.4rem; display: block;">Select Examination / Subject:</label>
+        <select id="export-exam-select" class="form-input" style="width: 100%;">
+          <option value="all">🌐 All Examinations (Combined)</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" style="width: auto; padding: 0.5rem 1.25rem;" onclick="document.getElementById('export-csv-modal').classList.add('hidden')">Cancel</button>
+        <button type="button" class="btn btn-success" style="width: auto; padding: 0.5rem 1.5rem;" onclick="admin.downloadSelectedCSV()">📥 Download CSV</button>
+      </div>
+    </div>
   </div>
 
   <script src="/js/admin.js"></script>

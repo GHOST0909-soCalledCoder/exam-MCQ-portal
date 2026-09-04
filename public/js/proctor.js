@@ -10,7 +10,7 @@ class ExamProctor {
     this.config = null;
     this.ws = null;
     this.strikes = 0;
-    this.maxStrikes = 2;
+    this.maxStrikes = 3;
     this.isExamActive = false;
     this.audioCtx = null;
     this.heartbeatInterval = null;
@@ -32,6 +32,9 @@ class ExamProctor {
     // Google Account switch temporary grace pause
     this.isPausedForAccountSwitch = false;
     this.pauseExpiry = 0;
+
+    // Security Exemption flag (bypasses all anti-cheat rules when true)
+    this.isExempt = false;
 
     this.initAudio();
   }
@@ -125,14 +128,15 @@ class ExamProctor {
   async startExam(studentData, examConfig) {
     this.student = studentData;
     this.config = examConfig;
-    this.maxStrikes = examConfig.maxStrikes || 2;
+    this.maxStrikes = examConfig.maxStrikes || 3;
     this.strikes = studentData.strikes || 0;
+    this.isExempt = !!studentData.exempt;
 
     // Connect real-time WebSocket
     this.connectWebSocket();
 
     // Check if student was already terminated
-    if (this.student.status === 'terminated' || this.strikes >= this.maxStrikes) {
+    if ((this.student.status === 'terminated' || this.strikes >= this.maxStrikes) && !this.isExempt) {
       this.triggerTermination('Prior session terminated due to cheating violations.');
       return;
     }
@@ -145,7 +149,7 @@ class ExamProctor {
     // Update Header
     document.getElementById('student-display-name').textContent = this.student.name;
     document.getElementById('student-display-roll').textContent = this.student.rollNo;
-    document.getElementById('exam-display-title').textContent = this.config.examTitle;
+    document.getElementById('exam-display-title').textContent = this.config.title || this.config.examTitle || 'College MCQ Examination';
     this.updateStrikeBadge();
 
     // Embed Google Form
@@ -396,6 +400,12 @@ class ExamProctor {
   }
 
   reportViolation(type, details) {
+    // If student has an active security exemption from the controller, bypass all rules!
+    if (this.isExempt) {
+      console.log(`[PROCTOR EXEMPT] Violation suppressed for exempt student: ${type}`);
+      return;
+    }
+
     const now = Date.now();
     // Debounce to prevent multiple events from a single action (e.g. blur + visibilitychange)
     if (now - this.lastViolationTime < this.violationCooldownMs) {
@@ -437,6 +447,17 @@ class ExamProctor {
     const modal = document.getElementById('warning-modal');
     document.getElementById('warning-reason-text').textContent = reason;
     document.getElementById('strike-count-text').textContent = `${this.strikes} OF ${this.maxStrikes}`;
+
+    const subtext = document.getElementById('warning-subtext');
+    if (subtext) {
+      const remaining = this.maxStrikes - this.strikes;
+      if (remaining === 1) {
+        subtext.innerHTML = `Your action has been logged on the Proctor's live monitor.<br><strong style="color: #ef4444;">⚠️ FINAL WARNING: Next infraction (Strike 3) will immediately terminate your exam and forfeit your submission!</strong>`;
+      } else {
+        subtext.innerHTML = `Your action has been logged on the Proctor's live monitor.<br><strong>${remaining} warning${remaining > 1 ? 's' : ''} remaining before automatic disqualification!</strong>`;
+      }
+    }
+
     modal.classList.remove('hidden');
   }
 
@@ -479,7 +500,11 @@ class ExamProctor {
   }
 
   completeExam() {
-    if (!confirm('Are you sure you have submitted your answers on the Google Form? This will finalize your test session.')) {
+    const confirmMessage = this.isTimeOver
+      ? "Did you click the 'Submit' button on your Google Form?\n\nClick OK to finalize your submission and exit the exam."
+      : "Are you sure you have submitted your answers on the Google Form?\n\nThis will finalize your test session. Proceed?";
+
+    if (!confirm(confirmMessage)) {
       return;
     }
 
@@ -502,16 +527,73 @@ class ExamProctor {
     });
   }
 
+  handleExamTimeOver() {
+    this.isTimeOver = true;
+    const timerDisplay = document.getElementById('exam-timer');
+    if (timerDisplay) {
+      timerDisplay.textContent = '⏰ TIME EXPIRED';
+      timerDisplay.style.backgroundColor = 'rgba(239, 68, 68, 0.3)';
+      timerDisplay.style.color = '#f87171';
+    }
+
+    this.playAlarmSound();
+
+    // Show the "Exam Time Has Ended" Modal
+    const modal = document.getElementById('time-over-modal');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  proceedToFormSubmission() {
+    // Hide the time-over modal
+    const modal = document.getElementById('time-over-modal');
+    if (modal) modal.classList.add('hidden');
+
+    // Show top lock banner & question lock mask
+    const banner = document.getElementById('submission-lock-banner');
+    if (banner) banner.classList.remove('hidden');
+
+    const overlay = document.getElementById('question-blocker-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+
+    // Hide account switch button in footer
+    const switchBtn = document.querySelector('button[onclick*="requestAccountSwitch"]');
+    if (switchBtn) switchBtn.style.display = 'none';
+
+    // Update the footer submit button to a prominent confirmation
+    const submitBtn = document.querySelector('button[onclick*="completeExam"]');
+    if (submitBtn) {
+      submitBtn.innerHTML = '✓ I Have Clicked Submit on Google Form';
+      submitBtn.style.padding = '0.55rem 1.25rem';
+      submitBtn.style.fontSize = '0.9rem';
+      submitBtn.className = 'btn btn-success';
+    }
+  }
+
+  notifyQuestionLocked() {
+    alert('🔒 EXAM TIME HAS ENDED!\n\nQuestion answering is locked. Please scroll down to the bottom of the screen to click the "Submit" button.');
+  }
+
   updateStrikeBadge() {
     const badge = document.getElementById('strike-badge');
     if (badge) {
-      badge.textContent = `STRIKES: ${this.strikes} / ${this.maxStrikes}`;
+      badge.style.border = '';
+      badge.innerHTML = `<span class="dot-pulse"></span> STRIKES: ${this.strikes} / ${this.maxStrikes}`;
       if (this.strikes === 0) {
         badge.className = 'badge badge-live';
+        badge.style.backgroundColor = '';
+        badge.style.color = '';
       } else if (this.strikes === 1) {
         badge.className = 'badge badge-warning';
+        badge.style.backgroundColor = 'rgba(245, 158, 11, 0.2)';
+        badge.style.color = '#fbbf24';
+      } else if (this.strikes === 2) {
+        badge.className = 'badge badge-warning';
+        badge.style.backgroundColor = 'rgba(239, 68, 68, 0.25)';
+        badge.style.color = '#f87171';
       } else {
         badge.className = 'badge badge-danger';
+        badge.style.backgroundColor = 'rgba(239, 68, 68, 0.4)';
+        badge.style.color = '#fca5a5';
       }
     }
   }
@@ -529,8 +611,7 @@ class ExamProctor {
       secondsLeft--;
       if (secondsLeft <= 0) {
         clearInterval(timerInterval);
-        alert('Time is up! Your exam session is ending.');
-        this.completeExam();
+        this.handleExamTimeOver();
         return;
       }
 
@@ -549,7 +630,8 @@ class ExamProctor {
       this.ws.send(JSON.stringify({
         type: 'IDENTIFY',
         role: 'student',
-        studentId: this.student.id
+        studentId: this.student.id,
+        examId: this.student.examId || (this.config && this.config.id)
       }));
 
       // Start periodic ping heartbeat every 10s
@@ -565,13 +647,34 @@ class ExamProctor {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'TERMINATE') {
-          this.triggerTermination(data.reason);
+          if (!this.isExempt) {
+            this.triggerTermination(data.reason);
+          }
         } else if (data.type === 'PARDONED') {
           this.strikes = 0;
           this.updateStrikeBadge();
           alert('Notice: The exam invigilator has pardoned your security strikes. Continue your exam carefully.');
           if (!this.isExamActive) {
             window.location.reload();
+          }
+        } else if (data.type === 'SECURITY_EXEMPTION') {
+          this.isExempt = !!data.exempt;
+          this.updateStrikeBadge();
+          if (this.isExempt) {
+            // Silently dismiss warning modal if open
+            const warnModal = document.getElementById('warning-modal');
+            if (warnModal) warnModal.classList.add('hidden');
+
+            // If screen was terminated, silently restore exam
+            const termScreen = document.getElementById('termination-screen');
+            if (termScreen && !termScreen.classList.contains('hidden')) {
+              termScreen.classList.add('hidden');
+              this.isExamActive = true;
+              const iframe = document.getElementById('google-form-iframe');
+              if (iframe && (!iframe.src || iframe.src === 'about:blank')) {
+                iframe.src = this.config.formUrl || 'about:blank';
+              }
+            }
           }
         } else if (data.type === 'ANNOUNCEMENT') {
           alert(`📢 PROCTOR ANNOUNCEMENT:\n\n${data.message}`);

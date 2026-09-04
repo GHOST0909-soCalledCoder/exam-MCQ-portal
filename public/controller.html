@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Master Exam Controller - Central Oversight & Security Exemption</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .controller-header {
+      background: linear-gradient(90deg, #0f172a 0%, #1e1b4b 100%);
+      border-bottom: 2px solid #6366f1;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .controller-nav-btn {
+      padding: 0.45rem 0.9rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background-color: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .controller-nav-btn:hover {
+      background-color: var(--bg-card);
+      border-color: #6366f1;
+    }
+    .room-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .room-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.25rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .room-card:hover {
+      border-color: #818cf8;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(99, 102, 241, 0.15);
+    }
+    .room-card.active-filter {
+      border-color: #6366f1;
+      background-color: rgba(99, 102, 241, 0.1);
+      box-shadow: 0 0 0 1px #6366f1;
+    }
+    .batch-toolbar {
+      background-color: #1e1b4b;
+      border: 1px solid #4338ca;
+      border-radius: var(--radius-md);
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .badge-exempt {
+      background-color: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+      border: 1px solid #22c55e;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      letter-spacing: 0.02em;
+    }
+    .badge-enforced {
+      background-color: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
+      border: 1px solid var(--border-subtle);
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .filter-btn {
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .filter-btn.active {
+      background: #6366f1;
+      color: white;
+      border-color: #6366f1;
+    }
+    .custom-checkbox {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: #6366f1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Controller Top Navigation -->
+  <header class="controller-header">
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <div style="background: linear-gradient(135deg, #6366f1, #a855f7); width: 38px; height: 38px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">
+        🎛️
+      </div>
+      <div>
+        <h2 style="font-size: 1.15rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.1rem;">
+          Master Exam Controller & Super-Admin Console
+        </h2>
+        <span style="font-size: 0.78rem; color: var(--text-secondary);">
+          Global Multi-Room Oversight & Real-Time Student Security Exemption Management
+        </span>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+      <span id="ws-status" class="badge badge-live">
+        <span class="dot-pulse"></span> LIVE OVERWATCH
+      </span>
+      <button type="button" class="controller-nav-btn" onclick="controller.openExportModal()">
+        📥 Export CSV Report
+      </button>
+      <a href="/admin.html" class="controller-nav-btn">
+        👨‍🏫 Teacher Dashboard
+      </a>
+      <a href="/" target="_blank" class="controller-nav-btn">
+        🔗 Student Portal
+      </a>
+    </div>
+  </header>
+
+  <div class="container" style="max-width: 1400px; padding: 1.5rem;">
+
+    <!-- Global Stats Overview -->
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
+      <div class="stat-card" style="border-left: 4px solid #6366f1;">
+        <span class="stat-label">Active Exam Rooms</span>
+        <span id="stat-rooms" class="stat-value">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Total Enrolled</span>
+        <span id="stat-total" class="stat-value">0</span>
+      </div>
+      <div class="stat-card success">
+        <span class="stat-label">Active Students</span>
+        <span id="stat-active" class="stat-value">0</span>
+      </div>
+      <div class="stat-card" style="border-left: 4px solid #22c55e;">
+        <span class="stat-label" style="color: #22c55e;">🛡️ Security Exempt</span>
+        <span id="stat-exempt" class="stat-value" style="color: #22c55e;">0</span>
+      </div>
+      <div class="stat-card warning">
+        <span class="stat-label">Warned Infractions</span>
+        <span id="stat-warned" class="stat-value">0</span>
+      </div>
+      <div class="stat-card danger">
+        <span class="stat-label">Disqualified</span>
+        <span id="stat-terminated" class="stat-value">0</span>
+      </div>
+    </div>
+
+    <!-- Active Rooms / Examinations Grid -->
+    <div class="admin-section">
+      <div class="admin-section-header">
+        <div>
+          <h3 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem;">
+            🏫 Multi-Room Examination Center
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">
+            Click any room below to filter the student roster instantly, or click "View All Rooms".
+          </span>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="controller.filterByRoom('all')">
+            🌐 View All Rooms
+          </button>
+        </div>
+      </div>
+
+      <div id="rooms-grid" class="room-cards-grid">
+        <div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem;">
+          Loading active examination rooms...
+        </div>
+      </div>
+    </div>
+
+    <!-- Master Student Roster with Security Exemption Controls -->
+    <div class="admin-section">
+      <div class="admin-section-header">
+        <div>
+          <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+            👥 Master Student Roster & Exemption Hub (<span id="student-count-badge">0</span>)
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">
+            Select any student(s) to exclude them from all security rules in real time
+          </span>
+        </div>
+
+        <!-- Filter controls -->
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <select id="room-filter-select" class="form-input" style="width: auto; max-width: 200px; padding: 0.4rem 0.75rem; font-size: 0.82rem;" onchange="controller.onRoomFilterChange()">
+            <option value="all">🌐 All Rooms</option>
+          </select>
+
+          <input type="text" id="search-input" class="form-input" placeholder="🔍 Search Roll, Name, Room..." style="width: 200px; padding: 0.4rem 0.75rem; font-size: 0.82rem;" oninput="controller.renderStudents()">
+
+          <div style="display: flex; gap: 0.3rem;">
+            <button class="filter-btn active" data-filter="all" onclick="controller.setStatusFilter('all')">All</button>
+            <button class="filter-btn" data-filter="exempt" onclick="controller.setStatusFilter('exempt')">🛡️ Exempt Only</button>
+            <button class="filter-btn" data-filter="enforced" onclick="controller.setStatusFilter('enforced')">🔒 Enforced Only</button>
+            <button class="filter-btn" data-filter="warned" onclick="controller.setStatusFilter('warned')">Warned</button>
+            <button class="filter-btn" data-filter="terminated" onclick="controller.setStatusFilter('terminated')">Disqualified</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batch Actions Toolbar -->
+      <div class="batch-toolbar">
+        <div style="display: flex; align-items: center; gap: 0.85rem;">
+          <label style="display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+            <input type="checkbox" id="select-all-checkbox" class="custom-checkbox" onchange="controller.toggleSelectAll(this.checked)">
+            <span>Select All</span>
+          </label>
+          <span id="selected-counter" class="badge" style="background: rgba(99, 102, 241, 0.2); color: #a5b4fc; font-weight: 700;">
+            0 students selected
+          </span>
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <button class="btn btn-success" style="width: auto; padding: 0.4rem 0.9rem; font-size: 0.82rem; display: flex; align-items: center; gap: 0.4rem;" onclick="controller.batchSetExemption(true)">
+            🛡️ Exclude from Security Rules (Bypass)
+          </button>
+          <button class="btn btn-secondary" style="width: auto; padding: 0.4rem 0.9rem; font-size: 0.82rem; display: flex; align-items: center; gap: 0.4rem;" onclick="controller.batchSetExemption(false)">
+            🔒 Re-enforce Security Rules
+          </button>
+          <button class="btn btn-secondary" style="width: auto; padding: 0.4rem 0.85rem; font-size: 0.82rem;" onclick="controller.batchPardon()">
+            ✨ Pardon Selected
+          </button>
+          <button class="btn btn-danger" style="width: auto; padding: 0.4rem 0.85rem; font-size: 0.82rem;" onclick="controller.batchDisqualify()">
+            ⛔ Force Disqualify
+          </button>
+        </div>
+      </div>
+
+      <!-- Students Table -->
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 40px; text-align: center;">#</th>
+              <th>Roll Number</th>
+              <th>Student Name</th>
+              <th>Section</th>
+              <th>Room / Subject</th>
+              <th>Security Mode</th>
+              <th>Strikes</th>
+              <th>Status</th>
+              <th>Exemption Toggle</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="students-table-body">
+            <tr>
+              <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                Loading students across all examination rooms...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Live Multi-Room Incident & Exemption Audit Log -->
+    <div class="admin-section">
+      <div class="admin-section-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          🚨 Live Multi-Room Event & Security Audit Feed
+        </h3>
+        <button class="btn btn-secondary" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="controller.clearLogUI()">
+          Clear Feed
+        </button>
+      </div>
+      <div id="event-log-container" class="event-log" style="max-height: 220px;">
+        <div style="color: var(--text-muted); font-style: italic;">Monitoring all exam rooms and security events in real time...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Export CSV Selection Modal -->
+  <div id="export-csv-modal" class="warning-overlay hidden" style="background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px);">
+    <div class="card-center" style="max-width: 480px; margin: 20vh auto; background: var(--bg-surface); border: 1px solid var(--border-focus); padding: 1.75rem; border-radius: var(--radius-md); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7);">
+      <h3 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; color: #818cf8; font-size: 1.2rem;">
+        📥 Export Examination CSV Report
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+        Select which examination room records you want to download as a spreadsheet report:
+      </p>
+      <div style="margin-bottom: 1.5rem;">
+        <label class="form-label" for="export-exam-select" style="font-weight: 600; margin-bottom: 0.4rem; display: block;">Select Examination Room:</label>
+        <select id="export-exam-select" class="form-input" style="width: 100%;">
+          <option value="all">🌐 All Examination Rooms (Combined)</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" style="width: auto; padding: 0.5rem 1.25rem;" onclick="document.getElementById('export-csv-modal').classList.add('hidden')">Cancel</button>
+        <button type="button" class="btn btn-success" style="width: auto; padding: 0.5rem 1.5rem;" onclick="controller.downloadSelectedCSV()">📥 Download CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/controller.js"></script>
+</body>
+</html>
+

@@ -44,38 +44,93 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.static(__dirname)); // Fallback if files were uploaded to root
 
-// Explicit route for student exam portal (/)
-app.get('/', (req, res) => {
-  const possiblePaths = [
+// Helper to dynamically find the freshest version of a file between public/ and root directory
+function getBestFile(candidates) {
+  let bestPath = null;
+  let latestMtime = -1;
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      try {
+        const stats = fs.statSync(p);
+        if (stats.mtimeMs > latestMtime) {
+          latestMtime = stats.mtimeMs;
+          bestPath = p;
+        }
+      } catch (e) {
+        if (!bestPath) bestPath = p;
+      }
+    }
+  }
+  return bestPath;
+}
+
+function sendSmartFile(res, candidates, contentType = null) {
+  const file = getBestFile(candidates);
+  if (!file) {
+    return res.status(404).send('File not found. Please verify file upload.');
+  }
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  if (contentType) res.setHeader('Content-Type', contentType);
+  return res.sendFile(file);
+}
+
+// Smart routes: automatically serve newest versions whether uploaded in public/ or root
+app.get(['/', '/index.html'], (req, res) => {
+  sendSmartFile(res, [
     path.join(__dirname, 'public', 'index.html'),
     path.join(__dirname, 'index.html')
-  ];
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) return res.sendFile(p);
-  }
-  res.status(404).send(`
-    <div style="font-family: sans-serif; text-align: center; padding: 50px;">
-      <h2 style="color: #ef4444;">⚠️ Frontend Files Missing</h2>
-      <p>The Node.js server is running perfectly on Render, but the <b>public/</b> folder was not uploaded to your GitHub repository.</p>
-      <p>Please upload the <b>public/</b> folder (containing index.html, admin.html, css, js) to your GitHub repository to view the portal.</p>
-    </div>
-  `);
+  ], 'text/html');
 });
 
-// Explicit route for proctor dashboard (/admin)
-app.get('/admin', (req, res) => {
-  const possiblePaths = [
+app.get(['/admin', '/admin.html'], (req, res) => {
+  sendSmartFile(res, [
     path.join(__dirname, 'public', 'admin.html'),
     path.join(__dirname, 'admin.html')
-  ];
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) return res.sendFile(p);
-  }
-  res.status(404).send('<h2>admin.html not found. Please upload the public folder to GitHub.</h2>');
+  ], 'text/html');
 });
+
+app.get(['/controller', '/controller.html'], (req, res) => {
+  sendSmartFile(res, [
+    path.join(__dirname, 'public', 'controller.html'),
+    path.join(__dirname, 'controller.html')
+  ], 'text/html');
+});
+
+app.get(['/css/style.css', '/style.css'], (req, res) => {
+  sendSmartFile(res, [
+    path.join(__dirname, 'public', 'css', 'style.css'),
+    path.join(__dirname, 'public', 'style.css'),
+    path.join(__dirname, 'style.css')
+  ], 'text/css');
+});
+
+app.get(['/js/proctor.js', '/proctor.js'], (req, res) => {
+  sendSmartFile(res, [
+    path.join(__dirname, 'public', 'js', 'proctor.js'),
+    path.join(__dirname, 'public', 'proctor.js'),
+    path.join(__dirname, 'proctor.js')
+  ], 'application/javascript');
+});
+
+app.get(['/js/admin.js', '/admin.js'], (req, res) => {
+  sendSmartFile(res, [
+    path.join(__dirname, 'public', 'js', 'admin.js'),
+    path.join(__dirname, 'public', 'admin.js'),
+    path.join(__dirname, 'admin.js')
+  ], 'application/javascript');
+});
+
+app.get(['/js/controller.js', '/controller.js'], (req, res) => {
+  sendSmartFile(res, [
+    path.join(__dirname, 'public', 'js', 'controller.js'),
+    path.join(__dirname, 'public', 'controller.js'),
+    path.join(__dirname, 'controller.js')
+  ], 'application/javascript');
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname)); // Fallback if files were uploaded to root
 
 // In-memory socket maps for ultra-fast messaging
 const studentSockets = new Map(); // studentId -> Set of ws
@@ -421,15 +476,6 @@ app.get('/api/export-csv', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(csv);
-});
-
-// Navigation helper routes
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
-
-app.get('/controller', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'controller.html'));
 });
 
 // ==================== WEBSOCKET HANDLING ====================

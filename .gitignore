@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Local test & session database (auto-generated on server start)
+exam_data.json
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+

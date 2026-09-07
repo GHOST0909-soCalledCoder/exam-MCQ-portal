@@ -231,8 +231,16 @@ class ExamDatabase {
       existing.section = (section || '').trim();
       existing.lastPing = Date.now();
       existing.ip = ip;
-      existing.examId = assignedExamId;
-      existing.examTitle = assignedExamTitle;
+      // If switching to a different exam room, reset session strikes cleanly
+      if (existing.examId !== assignedExamId) {
+        existing.examId = assignedExamId;
+        existing.examTitle = assignedExamTitle;
+        existing.strikes = 0;
+        existing.status = 'active';
+        existing.violations = [];
+        delete existing.terminatedAt;
+        delete existing.completedAt;
+      }
       existing.maxStrikes = assignedMaxStrikes;
       if (existing.exempt === undefined) existing.exempt = false;
       this.scheduleSave();
@@ -327,6 +335,15 @@ class ExamDatabase {
       return student;
     }
 
+    // Server-side debouncing: minimum 4 seconds between strike increments for the same student.
+    // Prevents network latency packet bursts from delivering instant multi-strikes.
+    const now = Date.now();
+    if (student.lastViolationTime && (now - student.lastViolationTime < 4000)) {
+      student.lastPing = now;
+      return student;
+    }
+    student.lastViolationTime = now;
+
     const maxStrikes = student.maxStrikes || 3;
     student.strikes += 1;
     const violationEntry = {
@@ -334,10 +351,10 @@ class ExamDatabase {
       maxStrikes: maxStrikes,
       type: violationType,
       details: details,
-      timestamp: Date.now()
+      timestamp: now
     };
     student.violations.push(violationEntry);
-    student.lastPing = Date.now();
+    student.lastPing = now;
 
     if (student.strikes >= maxStrikes) {
       student.status = 'terminated';

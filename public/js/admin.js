@@ -324,8 +324,8 @@ class AdminDashboard {
           <td>${this.escapeHtml(exam.teacherName || 'Faculty')}</td>
           <td>${exam.durationMinutes || 60} mins</td>
           <td>
-            <span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; font-weight: 600;">
-              ${exam.maxStrikes || 3} Strikes
+            <span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; font-weight: 600; cursor: pointer;" onclick="admin.editStrikeLimit('${exam.id}', ${exam.maxStrikes || 3})" title="Click to change strike limit">
+              ✏️ ${exam.maxStrikes || 3} Strikes
             </span>
           </td>
           <td>${statusBadge}</td>
@@ -337,6 +337,9 @@ class AdminDashboard {
           </td>
           <td>
             <div style="display: flex; gap: 0.35rem;">
+              <button class="btn btn-secondary" style="width: auto; padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="admin.editStrikeLimit('${exam.id}', ${exam.maxStrikes || 3})" title="Change strike limit">
+                ⚙️ Strikes (${exam.maxStrikes || 3})
+              </button>
               <button class="btn btn-secondary" style="width: auto; padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="admin.toggleExamStatus('${exam.id}', ${!exam.active})">
                 ${exam.active ? 'Disable' : 'Enable'}
               </button>
@@ -348,6 +351,34 @@ class AdminDashboard {
         </tr>
       `;
     }).join('');
+  }
+
+  async editStrikeLimit(examId, currentLimit = 3) {
+    const input = prompt(`Enter new maximum strikes limit for this exam:\n(Current: ${currentLimit})`, currentLimit);
+    if (input === null) return;
+    const newLimit = parseInt(input.trim(), 10);
+    if (isNaN(newLimit) || newLimit < 1) {
+      alert('Please enter a valid positive number (e.g. 1, 2, 3, 5).');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/exams/${examId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxStrikes: newLimit })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const idx = this.exams.findIndex(e => e.id === examId);
+        if (idx >= 0) this.exams[idx].maxStrikes = newLimit;
+        this.renderExams();
+      } else {
+        alert('Failed to update limit: ' + (data.error || 'Server error'));
+      }
+    } catch (err) {
+      alert('Error updating strike limit: ' + err.message);
+    }
   }
 
   renderExamFilterOptions() {

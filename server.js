@@ -531,7 +531,7 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'DIAGNOSTIC':
-          console.log(`[📱 PHONE TELEMETRY - ${boundStudentId || 'ANON'}]:`, JSON.stringify(data));
+          // Silently discard verbose telemetry to keep Node.js event loop fast and non-blocking
           break;
 
         case 'VIOLATION':

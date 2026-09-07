@@ -23,9 +23,8 @@
         <ul>
           <li><strong>Full Screen Required:</strong> Test must be completed in continuous fullscreen mode.</li>
           <li><strong>Zero Tab Switching:</strong> Switching tabs, minimizing the browser, or pressing <code>Alt+Tab</code> is strictly detected.</li>
-          <li><strong>2-Strike Disqualification:</strong> 
-            <br>• Strike 1: Blaring audio alarm + Warning overlay.
-            <br>• Strike 2: <strong>Immediate test termination, form lockout, and disqualification</strong>.
+          <li><strong>Multi-Strike Disqualification:</strong> 
+            Exceeding the exam's allowed strike limit results in immediate test termination, form destruction, and disqualification.
           </li>
           <li><strong>Restricted Hotkeys:</strong> DevTools (<code>F12</code>), Copy/Paste, and reload are disabled.</li>
         </ul>
@@ -90,6 +89,48 @@
       </div>
     </header>
 
+    <!-- 45-Second Initial Setup & Cookie Grace Banner -->
+    <div id="initial-grace-banner" class="grace-banner hidden">
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex: 1;">
+        <span style="font-size: 1.4rem;">🍪</span>
+        <div style="line-height: 1.35;">
+          <div style="font-weight: 700; color: #6ee7b7; font-size: 0.88rem;">Initial Setup & Cookie Grace Period Active</div>
+          <div style="font-size: 0.8rem; color: #a7f3d0;">
+            Accept any Google cookie prompts or sign in now. Exam anti-cheat rules will activate in <strong id="grace-countdown-seconds" style="color: #fef08a; font-size: 0.95rem;">45</strong>s.
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <button type="button" class="btn btn-secondary" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem; background: rgba(59, 130, 246, 0.25); border: 1px solid #3b82f6; color: #93c5fd;" onclick="proctor.openSwitchAccountModal()">
+          🔄 Switch Account
+        </button>
+        <button type="button" class="btn btn-success" style="width: auto; padding: 0.35rem 0.85rem; font-size: 0.8rem; background: #059669; border: 1px solid #047857;" onclick="proctor.endGraceEarly()">
+          ✓ I'm Ready (Start Rules Now)
+        </button>
+      </div>
+    </div>
+
+    <!-- Final Form Submission Grace Banner (60s buffer to click Submit in Google Form safely) -->
+    <div id="submission-grace-banner" class="submission-grace-banner-top hidden">
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex: 1;">
+        <span style="font-size: 1.4rem;">🔓</span>
+        <div style="line-height: 1.35;">
+          <div style="font-weight: 700; color: #fde047; font-size: 0.88rem;">Form Submission Grace Active</div>
+          <div style="font-size: 0.8rem; color: #fef08a;">
+            You can now click <strong>Submit</strong> inside your Google Form. Dialogs will not trigger strikes. Window closes in <strong id="submission-grace-countdown" style="color: #fff; font-size: 0.95rem;">60</strong>s.
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <button type="button" class="btn btn-success" style="width: auto; padding: 0.35rem 0.85rem; font-size: 0.8rem; background: #059669; border: 1px solid #047857; font-weight: bold;" onclick="proctor.completeExam()">
+          ✓ Finished & Submit Exam
+        </button>
+        <button type="button" class="btn btn-secondary" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem; background: rgba(148, 163, 184, 0.25); border: 1px solid #64748b; color: #cbd5e1;" onclick="proctor.endSubmissionGrace()">
+          Dismiss
+        </button>
+      </div>
+    </div>
+
     <!-- Full-screen Iframe Container -->
     <div class="iframe-container">
       <!-- Time Over Sticky Lockdown Banner -->
@@ -111,7 +152,13 @@
         </div>
       </div>
 
-      <iframe id="google-form-iframe" src="about:blank" allow="autoplay"></iframe>
+      <!-- Sandboxed Google Form Iframe (Blocks popups and top-level navigation breakouts so student cannot escape portal) -->
+      <iframe 
+        id="google-form-iframe" 
+        src="about:blank" 
+        allow="autoplay"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-presentation"
+      ></iframe>
     </div>
 
     <!-- Floating Action Footer -->
@@ -120,9 +167,12 @@
         <span class="dot-pulse" style="background-color: #10b981;"></span>
         <span style="display: inline-block;">Proctor Active</span>
       </div>
-      <div style="display: flex; gap: 0.5rem; align-items: center;">
-        <button class="btn btn-secondary" style="width: auto; padding: 0.45rem 0.85rem; font-size: 0.82rem;" onclick="proctor.requestAccountSwitch()" title="Temporarily pauses proctoring to switch Google account">
-          🔄 Switch Google Account
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <button class="btn btn-secondary" style="width: auto; padding: 0.45rem 0.85rem; font-size: 0.82rem;" onclick="proctor.openSwitchAccountModal()" title="Switch active Google account and refresh form">
+          🔄 Switch Account
+        </button>
+        <button class="btn btn-warning" id="btn-submit-grace" style="width: auto; padding: 0.45rem 0.85rem; font-size: 0.82rem; font-weight: 600;" onclick="proctor.startSubmissionGrace()" title="Activate 60s grace period to safely submit Google Form without false strikes">
+          🔓 Submit Form Grace (60s)
         </button>
         <button class="btn btn-success" style="width: auto; padding: 0.45rem 1rem; font-size: 0.85rem;" onclick="proctor.completeExam()">
           ✓ Submit Exam
@@ -147,6 +197,68 @@
       <button class="btn btn-danger" onclick="proctor.dismissWarning()">
         I Acknowledge & Return to Fullscreen
       </button>
+    </div>
+  </div>
+
+  <!-- Switch Google Account Modal -->
+  <div id="switch-account-modal" class="warning-overlay hidden" style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px);">
+    <div class="warning-dialog" style="border-color: #3b82f6; max-width: 520px; box-shadow: 0 25px 50px -12px rgba(59, 130, 246, 0.35); text-align: left;">
+      <div style="text-align: center; margin-bottom: 0.75rem;">
+        <div style="font-size: 2.25rem;">🔄</div>
+        <h2 style="color: #60a5fa; font-size: 1.35rem; font-weight: 800; margin: 0.25rem 0;">Switch Google Account</h2>
+        <p style="font-size: 0.82rem; color: #94a3b8; margin: 0;">
+          Select which Google account to load in your exam form.
+        </p>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: #f59e0b; margin-bottom: 1rem; padding: 0.4rem 0.75rem; background: rgba(245, 158, 11, 0.12); border: 1px dashed rgba(245, 158, 11, 0.4); border-radius: 6px;">
+        <span>⏱️ Auto-resumes in: <strong><span id="switch-account-countdown">60</span>s</strong></span>
+        <span>Remaining switches: <strong><span id="switch-account-attempts">3</span>/3</strong></span>
+      </div>
+
+      <!-- Quick Account Selector Buttons -->
+      <div style="margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.8rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.4rem;">
+          Option 1: Quick Select Account on this Device
+        </label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.55rem; text-align: center;" onclick="proctor.switchGoogleAccountIndex(0)">
+            👤 Account 1 (Default)
+          </button>
+          <button type="button" class="btn btn-primary" style="font-size: 0.82rem; padding: 0.55rem; text-align: center; background: #2563eb;" onclick="proctor.switchGoogleAccountIndex(1)">
+            👤 Account 2 (Secondary)
+          </button>
+          <button type="button" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.55rem; text-align: center;" onclick="proctor.switchGoogleAccountIndex(2)">
+            👤 Account 3
+          </button>
+          <button type="button" class="btn btn-secondary" style="font-size: 0.82rem; padding: 0.55rem; text-align: center;" onclick="proctor.switchGoogleAccountIndex(3)">
+            👤 Account 4
+          </button>
+        </div>
+      </div>
+
+      <!-- Direct Email Input -->
+      <div style="margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.8rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.4rem;">
+          Option 2: Or Enter Specific Google Email
+        </label>
+        <div style="display: flex; gap: 0.5rem;">
+          <input type="email" id="switch-account-email-input" placeholder="e.g. rollno@college.edu or name@gmail.com" style="flex: 1; padding: 0.45rem 0.75rem; font-size: 0.85rem; background: rgba(30, 41, 59, 0.8); border: 1px solid #475569; border-radius: 6px; color: #fff;">
+          <button type="button" class="btn btn-success" style="width: auto; padding: 0.45rem 0.85rem; font-size: 0.82rem;" onclick="proctor.switchGoogleAccountByEmail()">
+            Switch & Load
+          </button>
+        </div>
+      </div>
+
+      <!-- Add New Account link -->
+      <div style="padding-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.1); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+        <a href="javascript:void(0)" onclick="proctor.openGoogleAccountWindow()" style="font-size: 0.78rem; color: #60a5fa; text-decoration: underline;">
+          🔑 Need to sign into a new Google account on this device?
+        </a>
+        <button type="button" class="btn btn-secondary" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="proctor.closeSwitchAccountModal()">
+          Cancel
+        </button>
+      </div>
     </div>
   </div>
 

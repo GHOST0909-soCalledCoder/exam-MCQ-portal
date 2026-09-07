@@ -15,7 +15,8 @@ class ExamProctor {
     this.audioCtx = null;
     this.heartbeatInterval = null;
     this.lastViolationTime = 0;
-    this.violationCooldownMs = 2500; // Prevent duplicate rapid-fire event spam
+    this.violationCooldownMs = 5000; // 5-second cooldown to prevent duplicate rapid-fire event spam
+    this.isWarningModalOpen = false; // Pause violation checks while student reads strike warning modal
 
     // Detect mobile OS & fullscreen capability
     this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -29,9 +30,26 @@ class ExamProctor {
       document.msFullscreenEnabled
     );
 
-    // Google Account switch temporary grace pause
-    this.isPausedForAccountSwitch = false;
-    this.pauseExpiry = 0;
+    // Google Account Switch state
+    this.isSwitchAccountModalOpen = false;
+    this.switchAccountUses = 0;
+    this.switchAccountTimer = null;
+    this.currentAccountIdentifier = 0;
+
+    // Initial 45-second setup buffer & cookie grace period
+    this.examStartGraceExpiry = 0;
+    this.graceInterval = null;
+
+    // Overlay, Circle to Search & Window-in-Window tracking
+    this.lastTouchTime = Date.now();
+    this.lastIframeInteractionTime = Date.now();
+    this.blurTimer = null;
+    this.unfocusedSeconds = 0;
+    this.monitorInterval = null;
+
+    // Form submission grace mode
+    this.isSubmitGraceActive = false;
+    this.submitGraceCountdownInterval = null;
 
     // Security Exemption flag (bypasses all anti-cheat rules when true)
     this.isExempt = false;
@@ -39,32 +57,237 @@ class ExamProctor {
     this.initAudio();
   }
 
-  // Allow student to safely switch Google accounts without triggering false cheating strikes
-  requestAccountSwitch() {
-    const msg = "Need to switch your Google account?\n\nThis will temporarily pause proctoring for 60 seconds so you can sign in to your correct Google account, then return here.\n\nProceed?";
-    if (!confirm(msg)) return;
+  /* ---------------- Google Account Switch Flow ---------------- */
 
-    this.isPausedForAccountSwitch = true;
-    this.pauseExpiry = Date.now() + 60000;
+  /* ---------------- Google Account Switch Flow ---------------- */
 
-    // Open Google account chooser in a new tab/window
-    window.open('https://accounts.google.com/AccountChooser', '_blank');
+  buildFormUrlWithAccount(originalUrl, accountIdentifier) {
+    let url = originalUrl || '';
+    if (!url) return '';
 
-    alert("Proctoring paused for 60 seconds.\n\nSwitch your Google account in the newly opened tab, close it, and return here. Your form will refresh automatically.");
+    // Strip existing _t timestamp
+    url = url.replace(/[&?]_t=\d+/g, '');
 
-    // Reload iframe when student returns
-    const reloadForm = () => {
-      const iframe = document.getElementById('google-form-iframe');
-      if (iframe) {
-        iframe.src = iframe.src;
+    if (typeof accountIdentifier === 'number') {
+      const idx = accountIdentifier;
+      // Handle path /u/X/
+      if (/\/forms\/u\/\d+\//.test(url)) {
+        url = url.replace(/\/forms\/u\/\d+\//, `/forms/u/${idx}/`);
+      } else if (url.includes('/forms/d/')) {
+        url = url.replace('/forms/d/', `/forms/u/${idx}/d/`);
       }
-      window.removeEventListener('focus', reloadForm);
-    };
-    window.addEventListener('focus', reloadForm);
 
-    setTimeout(() => {
-      this.isPausedForAccountSwitch = false;
-    }, 60000);
+      // Handle authuser query param
+      if (/[?&]authuser=[^&]+/.test(url)) {
+        url = url.replace(/([?&])authuser=[^&]+/, `$1authuser=${idx}`);
+      } else {
+        url += (url.includes('?') ? '&' : '?') + `authuser=${idx}`;
+      }
+    } else if (typeof accountIdentifier === 'string' && accountIdentifier.trim()) {
+      const email = accountIdentifier.trim();
+      const encoded = encodeURIComponent(email);
+      if (/[?&]authuser=[^&]+/.test(url)) {
+        url = url.replace(/([?&])authuser=[^&]+/, `$1authuser=${encoded}`);
+      } else {
+        url += (url.includes('?') ? '&' : '?') + `authuser=${encoded}`;
+      }
+    }
+
+    // Ensure embedded=true
+    if (!url.includes('embedded=true')) {
+      url += (url.includes('?') ? '&' : '?') + 'embedded=true';
+    }
+
+    // Add cache buster
+    url += (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+    return url;
+  }
+
+  openSwitchAccountModal() {
+    if (!this.isExamActive) return;
+
+    const maxAttempts = 3;
+    if (this.switchAccountUses >= maxAttempts) {
+      if (typeof alert !== 'undefined') {
+        alert('You have reached the maximum allowed account switch attempts (' + maxAttempts + ') for this exam.');
+      }
+      return;
+    }
+
+    this.switchAccountUses = (this.switchAccountUses || 0) + 1;
+    this.isSwitchAccountModalOpen = true;
+
+    const modal = document.getElementById('switch-account-modal');
+    if (modal) modal.classList.remove('hidden');
+
+    const attemptsEl = document.getElementById('switch-account-attempts');
+    if (attemptsEl) attemptsEl.textContent = (maxAttempts - this.switchAccountUses);
+
+    // 60-second strict countdown timer to prevent indefinite anti-cheat suspension
+    let secondsLeft = 60;
+    const countdownEl = document.getElementById('switch-account-countdown');
+    if (countdownEl) countdownEl.textContent = secondsLeft;
+
+    if (this.switchAccountTimer) clearInterval(this.switchAccountTimer);
+    this.switchAccountTimer = setInterval(() => {
+      secondsLeft--;
+      if (countdownEl) countdownEl.textContent = secondsLeft;
+      if (secondsLeft <= 0) {
+        clearInterval(this.switchAccountTimer);
+        this.switchAccountTimer = null;
+        this.closeSwitchAccountModal();
+      }
+    }, 1000);
+  }
+
+  switchGoogleAccountIndex(index) {
+    this.currentAccountIdentifier = index;
+    const iframe = document.getElementById('google-form-iframe');
+    if (iframe) {
+      const base = this.config.formUrl || iframe.src;
+      const newUrl = this.buildFormUrlWithAccount(base, index);
+      iframe.src = newUrl;
+    }
+    this.closeSwitchAccountModal();
+    this.showToast(`🔄 Form switched to Google Account ${index + 1}`);
+  }
+
+  switchGoogleAccountByEmail() {
+    const input = document.getElementById('switch-account-email-input');
+    const email = input ? input.value.trim() : '';
+    if (!email) {
+      if (typeof alert !== 'undefined') {
+        alert('Please enter your Google email address.');
+      }
+      return;
+    }
+
+    this.currentAccountIdentifier = email;
+    const iframe = document.getElementById('google-form-iframe');
+    if (iframe) {
+      const base = this.config.formUrl || iframe.src;
+      const newUrl = this.buildFormUrlWithAccount(base, email);
+      iframe.src = newUrl;
+    }
+    this.closeSwitchAccountModal();
+    this.showToast(`🔄 Form switched to Google Account: ${email}`);
+  }
+
+  openGoogleAccountWindow() {
+    // Open Google AddSession in a new window/tab to allow student to sign in on device
+    window.open('https://accounts.google.com/AddSession', '_blank');
+  }
+
+  reloadFormWithNewAccount() {
+    this.switchGoogleAccountIndex(this.currentAccountIdentifier || 0);
+  }
+
+  closeSwitchAccountModal() {
+    this.isSwitchAccountModalOpen = false;
+    if (this.switchAccountTimer) {
+      clearInterval(this.switchAccountTimer);
+      this.switchAccountTimer = null;
+    }
+    this.lastViolationTime = Date.now(); // 5s grace cooldown
+    const modal = document.getElementById('switch-account-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  // Backwards compatibility alias
+  requestAccountSwitch() {
+    this.openSwitchAccountModal();
+  }
+
+  /* ---------------- Initial Setup & Cookie Grace Period (45s) ---------------- */
+
+  startGracePeriod() {
+    this.examStartGraceExpiry = Date.now() + 45000;
+
+    const banner = document.getElementById('initial-grace-banner');
+    if (banner) banner.classList.remove('hidden');
+
+    let secondsLeft = 45;
+    const timerEl = document.getElementById('grace-countdown-seconds');
+    if (timerEl) timerEl.textContent = secondsLeft;
+
+    if (this.graceInterval) clearInterval(this.graceInterval);
+    this.graceInterval = setInterval(() => {
+      secondsLeft--;
+      if (timerEl) timerEl.textContent = Math.max(0, secondsLeft);
+      if (secondsLeft <= 0) {
+        this.endGraceEarly();
+      }
+    }, 1000);
+  }
+
+  endGraceEarly() {
+    this.examStartGraceExpiry = 0;
+    if (this.graceInterval) {
+      clearInterval(this.graceInterval);
+      this.graceInterval = null;
+    }
+    const banner = document.getElementById('initial-grace-banner');
+    if (banner) banner.classList.add('hidden');
+    this.showToast('🛡️ Exam Anti-Cheat Rules are now ACTIVE');
+  }
+
+  /* ---------------- Final Submission Grace Period (60s) ---------------- */
+
+  startSubmissionGrace() {
+    if (!this.isExamActive) return;
+    this.isSubmitGraceActive = true;
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = null;
+    }
+    this.unfocusedSeconds = 0;
+
+    const banner = document.getElementById('submission-grace-banner');
+    if (banner) banner.classList.remove('hidden');
+
+    let secondsLeft = 60;
+    const timerEl = document.getElementById('submission-grace-countdown');
+    if (timerEl) timerEl.textContent = secondsLeft;
+
+    if (this.submitGraceCountdownInterval) clearInterval(this.submitGraceCountdownInterval);
+    this.submitGraceCountdownInterval = setInterval(() => {
+      secondsLeft--;
+      if (timerEl) timerEl.textContent = Math.max(0, secondsLeft);
+      if (secondsLeft <= 0) {
+        this.endSubmissionGrace();
+      }
+    }, 1000);
+    this.showToast('🔓 Submission Grace Active (60s) - Submit Form Safely');
+  }
+
+  endSubmissionGrace() {
+    const wasActive = this.isSubmitGraceActive;
+    this.isSubmitGraceActive = false;
+    if (this.submitGraceCountdownInterval) {
+      clearInterval(this.submitGraceCountdownInterval);
+      this.submitGraceCountdownInterval = null;
+    }
+    const banner = document.getElementById('submission-grace-banner');
+    if (banner) banner.classList.add('hidden');
+    if (wasActive) {
+      this.lastViolationTime = Date.now(); // 5s cooldown buffer after ending grace
+    }
+  }
+
+  showToast(message) {
+    let container = document.getElementById('proctor-toast-notification');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'proctor-toast-notification';
+      container.style.cssText = 'position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #1e293b; border: 1px solid #3b82f6; color: #93c5fd; padding: 0.6rem 1.25rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; z-index: 9999; box-shadow: 0 10px 25px rgba(0,0,0,0.5); pointer-events: none; transition: opacity 0.3s ease;';
+      document.body.appendChild(container);
+    }
+    container.textContent = message;
+    container.style.opacity = '1';
+    clearTimeout(this.toastTimeout);
+    this.toastTimeout = setTimeout(() => {
+      if (container) container.style.opacity = '0';
+    }, 4000);
   }
 
   // Must be called on user tap/click to unlock mobile browser audio
@@ -169,10 +392,16 @@ class ExamProctor {
       window.scrollTo(0, 1);
     }
 
-    // Start anti-cheat listeners
+    // Start anti-cheat listeners & security monitor
     this.isExamActive = true;
+    this.isSubmitGraceActive = false;
+    this.lastViolationTime = 0;
     this.bindAntiCheatListeners();
+    this.startSecurityMonitor();
     this.startTimer(this.config.durationMinutes || 60);
+
+    // Start 45-second setup & cookie grace period
+    this.startGracePeriod();
   }
 
   async requestFullscreen() {
@@ -191,12 +420,45 @@ class ExamProctor {
   }
 
   bindAntiCheatListeners() {
-    // 1. Page Visibility (The ONLY accurate standard for Tab Switch / App Minimize / Swiping to Home)
+    // 0. User Interaction Tracking
+    window.addEventListener('touchstart', () => {
+      this.lastTouchTime = Date.now();
+    }, { capture: true, passive: true });
+
+    window.addEventListener('pointerdown', () => {
+      this.lastTouchTime = Date.now();
+    }, { capture: true, passive: true });
+
+    // Track interactions with iframe and its container to prevent false strikes on form actions & submission alerts
+    const trackIframeInteraction = () => {
+      this.lastIframeInteractionTime = Date.now();
+      if (this.blurTimer) {
+        clearTimeout(this.blurTimer);
+        this.blurTimer = null;
+      }
+      this.unfocusedSeconds = 0;
+    };
+
+    const iframe = document.getElementById('google-form-iframe');
+    const iframeContainer = document.querySelector('.iframe-container');
+    if (iframeContainer && typeof iframeContainer.addEventListener === 'function') {
+      iframeContainer.addEventListener('mouseenter', trackIframeInteraction, { passive: true });
+      iframeContainer.addEventListener('mousemove', trackIframeInteraction, { passive: true });
+      iframeContainer.addEventListener('pointerdown', trackIframeInteraction, { passive: true });
+      iframeContainer.addEventListener('touchstart', trackIframeInteraction, { passive: true });
+    }
+    if (iframe && typeof iframe.addEventListener === 'function') {
+      iframe.addEventListener('load', trackIframeInteraction);
+    }
+
+    // 1. Page Visibility (The rock-solid standard for Tab Switch / App Minimize / Swiping to Home)
     // Works reliably on Android, iOS, Windows, Mac, Linux.
-    // DOES NOT trigger when typing in the form, opening keyboard, or receiving notifications!
+    // Does not falsely trigger when clicking iframe, scrolling, or selecting MCQ options!
     const handleVisibility = () => {
       if (!this.isExamActive) return;
-      if (this.isPausedForAccountSwitch && Date.now() < this.pauseExpiry) return;
+      if (this.isWarningModalOpen) return;
+      if (this.isSwitchAccountModalOpen) return;
+      if (Date.now() < this.examStartGraceExpiry) return;
 
       const isHidden = document.visibilityState === 'hidden' || document.webkitVisibilityState === 'hidden';
       if (isHidden) {
@@ -207,141 +469,93 @@ class ExamProctor {
     document.addEventListener('visibilitychange', handleVisibility);
     document.addEventListener('webkitvisibilitychange', handleVisibility);
 
+    // 1b. Window Blur & External Overlay Detector (Catches Circle to Search, Select to Search, Overlays everywhere)
+    window.addEventListener('blur', () => {
+      if (!this.isExamActive) return;
+      if (this.isWarningModalOpen) return;
+      if (this.isSwitchAccountModalOpen) return;
+      if (this.isSubmitGraceActive) return;
+      if (Date.now() < this.examStartGraceExpiry) return;
+      if (this.isExempt) return;
+
+      if (this.blurTimer) clearTimeout(this.blurTimer);
+
+      // Verify after 5000ms:
+      // - If student clicked Submit on Google Form, native browser confirm dialog takes 1-3s;
+      //   when closed, window focus fires immediately and clears this timer!
+      // - If student triggered Circle to Search, Select to Search, or external overlay/app,
+      //   the overlay remains active for >= 5s, triggering violation!
+      this.blurTimer = setTimeout(() => {
+        if (!this.isExamActive) return;
+        if (this.isWarningModalOpen) return;
+        if (this.isSwitchAccountModalOpen) return;
+        if (this.isSubmitGraceActive) return;
+        if (Date.now() < this.examStartGraceExpiry) return;
+        if (this.isExempt) return;
+
+        const isKeyboard = window.visualViewport && (window.visualViewport.height < window.innerHeight * 0.80);
+        if (isKeyboard) return; // Legitimate virtual keyboard typing
+
+        const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+
+        if (!hasFocus && document.visibilityState === 'visible') {
+          this.reportViolation(
+            'Circle to Search / External Overlay Detected',
+            'Browser lost focus to Circle to Search, search overlay, or floating app'
+          );
+        }
+      }, 5000);
+    });
+
+    window.addEventListener('focus', () => {
+      if (this.blurTimer) {
+        clearTimeout(this.blurTimer);
+        this.blurTimer = null;
+      }
+      this.unfocusedSeconds = 0;
+    });
+
+    // 1c. Viewport Resize & Window-in-Window / Split-Screen Detector
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        this.checkWindowInWindow();
+      }, 300);
+    });
+
+    // 1d. Picture-in-Picture Detector
+    document.addEventListener('enterpictureinpicture', () => {
+      if (this.isExamActive && !this.isExempt) {
+        this.reportViolation('Picture-in-Picture Mode Detected', 'Exam entered Picture-in-Picture window mode');
+      }
+    });
+
     // 2. Mobile Pagehide Event (Triggered reliably on iOS Safari & Android when switching apps)
     window.addEventListener('pagehide', () => {
       if (!this.isExamActive) return;
-      if (this.isPausedForAccountSwitch && Date.now() < this.pauseExpiry) return;
+      if (this.isWarningModalOpen) return;
+      if (this.isSwitchAccountModalOpen) return;
+      if (Date.now() < this.examStartGraceExpiry) return;
       this.reportViolation('App Minimized / Left Browser', 'User minimized browser or opened another mobile app');
     });
 
-    // 3. Floating Window & Circle-to-Search Guard (Both Desktop and Mobile)
-    let blurCheckTimer = null;
-    let edgeSwipeTriggered = false;
-    let longPressTriggered = false;
-    let touchHoldTimer = null;
-
-    // Detect screen-edge swipe gestures (how Xiaomi/Oppo/Samsung/Realme open sidebar floating toolboxes)
-    window.addEventListener('touchstart', (e) => {
-      if (!this.isExamActive) return;
-      const t = e.touches[0];
-      if (!t) return;
-
-      // 1. Edge swipe detector: If touch starts within 25px of the left or right edge of the phone
-      const edgeThreshold = 25;
-      if (t.clientX <= edgeThreshold || t.clientX >= (window.innerWidth - edgeThreshold)) {
-        edgeSwipeTriggered = true;
-        setTimeout(() => { edgeSwipeTriggered = false; }, 2500);
-      }
-
-      // 2. Long-press detector: Holding finger still for > 400ms (how Circle-to-Search / Select-to-Search is triggered)
-      clearTimeout(touchHoldTimer);
-      touchHoldTimer = setTimeout(() => {
-        longPressTriggered = true;
-        setTimeout(() => { longPressTriggered = false; }, 2500);
-      }, 400);
-    }, { passive: true, capture: true });
-
-    window.addEventListener('touchend', () => {
-      clearTimeout(touchHoldTimer);
-    }, { passive: true, capture: true });
-
-    window.addEventListener('touchcancel', () => {
-      clearTimeout(touchHoldTimer);
-    }, { passive: true, capture: true });
-
-    // Block text selection gestures in the browser window
+    // 3. Block text selection gestures in the outer exam wrapper
     window.addEventListener('selectstart', (e) => {
-      if (this.isExamActive) {
+      if (this.isExamActive && e.target && !e.target.closest('#google-form-iframe')) {
         e.preventDefault();
         return false;
       }
     });
-
-    // Smart Window Blur Detector (Works on both Mobile & Desktop):
-    // Distinguishes legitimate form filling vs Floating Windows (e.g. Chalo) & Circle to Search
-    window.addEventListener('blur', () => {
-      if (!this.isExamActive) return;
-      if (this.isPausedForAccountSwitch && Date.now() < this.pauseExpiry) return;
-
-      if (blurCheckTimer) clearTimeout(blurCheckTimer);
-
-      // Check after 600ms to allow normal focus shift into the Google Form iframe:
-      blurCheckTimer = setTimeout(() => {
-        if (!this.isExamActive) return;
-        if (this.isPausedForAccountSwitch && Date.now() < this.pauseExpiry) return;
-
-        // Is the virtual keyboard open? (When student is typing in Google Form, visualViewport shrinks by >= 18%)
-        const isKeyboardActive = window.visualViewport && (window.visualViewport.height < window.innerHeight * 0.82);
-
-        // If the student is simply typing their name/answers with on-screen keyboard, this is legitimate!
-        if (isKeyboardActive) {
-          return;
-        }
-
-        // Did the student just trigger a sidebar edge swipe (Floating app toolbox)?
-        if (edgeSwipeTriggered) {
-          this.reportViolation('Floating Window / Sidebar App Detected', 'Sidebar toolbox or floating app opened');
-          edgeSwipeTriggered = false;
-          return;
-        }
-
-        // Did the student trigger Circle to Search / Select to Search (long-press text)?
-        if (longPressTriggered) {
-          this.reportViolation('Circle to Search / Search Overlay Detected', 'Contextual search overlay triggered');
-          longPressTriggered = false;
-          return;
-        }
-
-        // Check if Chrome has lost OS focus:
-        const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
-
-        // If the student opened a floating window (Chalo) or Circle to Search / external app:
-        if (!hasFocus) {
-          this.reportViolation('External Window / Overlay Detected', 'Browser lost focus to floating app or overlay');
-        } else if (!this.isMobile && document.visibilityState === 'hidden') {
-          this.reportViolation('Window Focus Lost', 'Switched away from browser window');
-        }
-      }, 500);
-    });
-
-    // 4. Continuous Background & Floating Window Monitor (1-second heartbeat)
-    // Catches floating apps, sidebar toolboxes, or search overlays that remain on screen
-    setInterval(() => {
-      if (!this.isExamActive) return;
-      if (this.isPausedForAccountSwitch && Date.now() < this.pauseExpiry) return;
-
-      const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
-      const isKeyboard = window.visualViewport && (window.visualViewport.height < window.innerHeight * 0.82);
-
-      // Diagnostic telemetry sent to proctor server
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({
-          type: 'DIAGNOSTIC',
-          hasFocus: hasFocus,
-          isKeyboard: isKeyboard,
-          visibility: document.visibilityState,
-          vpRatio: window.visualViewport ? (window.visualViewport.height / window.innerHeight).toFixed(2) : '1.0'
-        }));
-      }
-
-      // If Chrome has lost OS focus while the virtual keyboard is NOT open
-      if (!hasFocus && !isKeyboard) {
-        this.unfocusedSeconds = (this.unfocusedSeconds || 0) + 1;
-        if (this.unfocusedSeconds >= 2) {
-          this.reportViolation('Floating Window / Search Overlay Active', 'External app or search window running over exam');
-          this.unfocusedSeconds = 0;
-        }
-      } else {
-        this.unfocusedSeconds = 0;
-      }
-    }, 1000);
 
     // 4. Desktop Fullscreen Exit Detection
     // On mobile devices, virtual keyboards alter viewport geometry so fullscreenchange is not used
     if (!this.isMobile && this.isFullscreenSupported) {
       const handleFullscreenChange = () => {
         if (!this.isExamActive) return;
-        if (this.isPausedForAccountSwitch && Date.now() < this.pauseExpiry) return;
+        if (this.isWarningModalOpen) return;
+        if (this.isSwitchAccountModalOpen) return;
+        if (Date.now() < this.examStartGraceExpiry) return;
         const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
         if (!isFullscreen) {
           this.reportViolation('Exited Fullscreen Mode', 'User exited full-screen view');
@@ -399,7 +613,116 @@ class ExamProctor {
     });
   }
 
+  /* ---------------- Window-in-Window & Overlay Monitoring ---------------- */
+
+  checkWindowInWindow() {
+    if (!this.isExamActive) return;
+    if (this.isWarningModalOpen) return;
+    if (this.isSwitchAccountModalOpen) return;
+    if (Date.now() < this.examStartGraceExpiry) return;
+    if (this.isExempt) return;
+
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    // Check if virtual keyboard is open (visualViewport height drops significantly)
+    const isKeyboard = window.visualViewport && (window.visualViewport.height < winH * 0.80);
+    if (isKeyboard) return;
+
+    if (this.isMobile) {
+      const screenW = window.screen.width;
+      const screenH = window.screen.height;
+      const minScreenDim = Math.min(screenW, screenH);
+      const maxScreenDim = Math.max(screenW, screenH);
+
+      const isPortrait = winH >= winW;
+      const widthRatio = isPortrait ? (winW / minScreenDim) : (winW / maxScreenDim);
+      const heightRatio = isPortrait ? (winH / maxScreenDim) : (winH / minScreenDim);
+
+      // 1. Floating Window / Pop-up View (Window-in-Window mode)
+      // When the browser is put into a floating pop-up window (Samsung Pop-up, Xiaomi Floating Window, etc.)
+      // width is restricted, typically 50%-75% of screen width
+      if (widthRatio < 0.82) {
+        this.reportViolation(
+          'Window-in-Window / Floating Window Detected',
+          `Exam window reduced to ${Math.round(widthRatio * 100)}% width (Floating Window Mode)`
+        );
+        return;
+      }
+
+      // 2. Split-Screen Mode
+      // In split screen, height is cut in half (< 60% of screen height)
+      if (heightRatio < 0.60) {
+        this.reportViolation(
+          'Split-Screen Mode Detected',
+          `Exam viewport height reduced to ${Math.round(heightRatio * 100)}% of screen (Split-Screen Mode)`
+        );
+        return;
+      }
+    } else {
+      // Desktop: Detect if browser window was shrunk or taken out of fullscreen into split-screen/floating window
+      if (this.isFullscreenSupported) {
+        const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        if (!isFullscreen) {
+          const screenAvailW = window.screen.availWidth || 1920;
+          const screenAvailH = window.screen.availHeight || 1080;
+          if (winW < screenAvailW * 0.80 || winH < screenAvailH * 0.75) {
+            this.reportViolation(
+              'Window-in-Window Mode Detected',
+              'Exam browser was shrunk into a window or split-screen view'
+            );
+          }
+        }
+      }
+    }
+  }
+
+  startSecurityMonitor() {
+    if (this.monitorInterval) clearInterval(this.monitorInterval);
+    this.monitorInterval = setInterval(() => {
+      if (!this.isExamActive) return;
+      if (this.isWarningModalOpen) return;
+      if (this.isSwitchAccountModalOpen) return;
+      if (Date.now() < this.examStartGraceExpiry) return;
+      if (this.isExempt) return;
+
+      // 1. Viewport dimension check (Split-Screen & Floating Window)
+      this.checkWindowInWindow();
+
+      // 2. Continuous Unfocused / Overlay Check (Catches Circle to Search, Select to Search, floating apps everywhere)
+      const isKeyboard = window.visualViewport && (window.visualViewport.height < window.innerHeight * 0.80);
+      const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+
+      // Runs everywhere (Mobile & Desktop) when not in submission grace
+      if (!this.isSubmitGraceActive && !hasFocus && !isKeyboard && document.visibilityState === 'visible') {
+        this.unfocusedSeconds = (this.unfocusedSeconds || 0) + 1;
+        // If an external overlay or search remains active for >= 5 seconds
+        if (this.unfocusedSeconds >= 5) {
+          this.reportViolation(
+            'Circle to Search / External Overlay Detected',
+            'External search overlay or floating window active over exam'
+          );
+          this.unfocusedSeconds = 0;
+        }
+      } else {
+        this.unfocusedSeconds = 0;
+      }
+    }, 1000);
+  }
+
   reportViolation(type, details) {
+    if (!this.isExamActive) return;
+    if (this.isWarningModalOpen) return;
+    if (this.isSwitchAccountModalOpen) return;
+    if (this.isSubmitGraceActive) {
+      console.log(`[PROCTOR SUBMIT GRACE] Violation suppressed during final submission grace period: ${type}`);
+      return;
+    }
+    if (Date.now() < this.examStartGraceExpiry) {
+      console.log(`[PROCTOR GRACE] Violation suppressed during initial setup grace period: ${type}`);
+      return;
+    }
+
     // If student has an active security exemption from the controller, bypass all rules!
     if (this.isExempt) {
       console.log(`[PROCTOR EXEMPT] Violation suppressed for exempt student: ${type}`);
@@ -407,7 +730,7 @@ class ExamProctor {
     }
 
     const now = Date.now();
-    // Debounce to prevent multiple events from a single action (e.g. blur + visibilitychange)
+    // Debounce to prevent multiple events from a single action (at least 5s cooldown)
     if (now - this.lastViolationTime < this.violationCooldownMs) {
       return;
     }
@@ -444,6 +767,7 @@ class ExamProctor {
   }
 
   showWarningModal(reason) {
+    this.isWarningModalOpen = true;
     const modal = document.getElementById('warning-modal');
     document.getElementById('warning-reason-text').textContent = reason;
     document.getElementById('strike-count-text').textContent = `${this.strikes} OF ${this.maxStrikes}`;
@@ -452,7 +776,7 @@ class ExamProctor {
     if (subtext) {
       const remaining = this.maxStrikes - this.strikes;
       if (remaining === 1) {
-        subtext.innerHTML = `Your action has been logged on the Proctor's live monitor.<br><strong style="color: #ef4444;">⚠️ FINAL WARNING: Next infraction (Strike 3) will immediately terminate your exam and forfeit your submission!</strong>`;
+        subtext.innerHTML = `Your action has been logged on the Proctor's live monitor.<br><strong style="color: #ef4444;">⚠️ FINAL WARNING: Next infraction will immediately terminate your exam and forfeit your submission!</strong>`;
       } else {
         subtext.innerHTML = `Your action has been logged on the Proctor's live monitor.<br><strong>${remaining} warning${remaining > 1 ? 's' : ''} remaining before automatic disqualification!</strong>`;
       }
@@ -462,13 +786,26 @@ class ExamProctor {
   }
 
   dismissWarning() {
+    this.isWarningModalOpen = false;
+    this.lastViolationTime = Date.now(); // Reset cooldown to give grace period upon dismissing
     document.getElementById('warning-modal').classList.add('hidden');
     // Force re-enter fullscreen
-    this.requestFullscreen();
+    if (!this.isMobile && this.isFullscreenSupported) {
+      this.requestFullscreen();
+    }
   }
 
   triggerTermination(reason) {
     this.isExamActive = false;
+    this.endSubmissionGrace();
+    if (this.monitorInterval) {
+      clearInterval(this.monitorInterval);
+      this.monitorInterval = null;
+    }
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = null;
+    }
 
     // 1. Immediately wipe the Google Form iframe from DOM so questions can never be viewed/answered
     const iframeContainer = document.querySelector('.iframe-container');
@@ -500,6 +837,7 @@ class ExamProctor {
   }
 
   completeExam() {
+    this.endSubmissionGrace();
     const confirmMessage = this.isTimeOver
       ? "Did you click the 'Submit' button on your Google Form?\n\nClick OK to finalize your submission and exit the exam."
       : "Are you sure you have submitted your answers on the Google Form?\n\nThis will finalize your test session. Proceed?";
@@ -509,6 +847,14 @@ class ExamProctor {
     }
 
     this.isExamActive = false;
+    if (this.monitorInterval) {
+      clearInterval(this.monitorInterval);
+      this.monitorInterval = null;
+    }
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = null;
+    }
     fetch('/api/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -653,7 +999,7 @@ class ExamProctor {
         } else if (data.type === 'PARDONED') {
           this.strikes = 0;
           this.updateStrikeBadge();
-          alert('Notice: The exam invigilator has pardoned your security strikes. Continue your exam carefully.');
+          this.showAnnouncement('Notice: The exam invigilator has pardoned your security strikes. Continue your exam carefully.');
           if (!this.isExamActive) {
             window.location.reload();
           }
@@ -662,6 +1008,7 @@ class ExamProctor {
           this.updateStrikeBadge();
           if (this.isExempt) {
             // Silently dismiss warning modal if open
+            this.isWarningModalOpen = false;
             const warnModal = document.getElementById('warning-modal');
             if (warnModal) warnModal.classList.add('hidden');
 
@@ -677,7 +1024,7 @@ class ExamProctor {
             }
           }
         } else if (data.type === 'ANNOUNCEMENT') {
-          alert(`📢 PROCTOR ANNOUNCEMENT:\n\n${data.message}`);
+          this.showAnnouncement(data.message);
         }
       } catch (err) {
         console.error('Error handling WS message:', err);
@@ -691,6 +1038,40 @@ class ExamProctor {
         setTimeout(() => this.connectWebSocket(), 3000);
       }
     };
+  }
+
+  showAnnouncement(message) {
+    let container = document.getElementById('proctor-announcement-toast');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'proctor-announcement-toast';
+      container.className = 'announcement-toast';
+      document.body.appendChild(container);
+    }
+    container.innerHTML = `
+      <div class="announcement-card">
+        <div style="font-size: 1.5rem; margin-right: 0.75rem;">📢</div>
+        <div style="flex: 1;">
+          <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #60a5fa; letter-spacing: 0.05em; margin-bottom: 0.2rem;">Invigilator Announcement</div>
+          <div style="font-size: 0.9rem; color: #f8fafc; line-height: 1.4;">${this.escapeHtml(message)}</div>
+        </div>
+        <button type="button" class="announcement-close-btn" onclick="this.closest('.announcement-toast').remove()">✕</button>
+      </div>
+    `;
+    this.playAlarmSound();
+
+    // Auto-dismiss after 15 seconds if not closed
+    setTimeout(() => {
+      const el = document.getElementById('proctor-announcement-toast');
+      if (el) el.remove();
+    }, 15000);
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 }
 

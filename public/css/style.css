@@ -665,3 +665,85 @@ table.data-table tr:hover {
   display: none !important;
 }
 
+/* Proctor Announcement Toast */
+.announcement-toast {
+  position: fixed;
+  top: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999999;
+  width: 90%;
+  max-width: 520px;
+  animation: slideDownToast 0.3s ease-out;
+}
+
+.announcement-card {
+  display: flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.96);
+  backdrop-filter: blur(12px);
+  border: 2px solid #3b82f6;
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.25rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 25px rgba(59, 130, 246, 0.3);
+}
+
+.announcement-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  margin-left: 0.5rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.announcement-close-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes slideDownToast {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Cookie & Setup Grace Period Banner */
+.grace-banner {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.2));
+  border-bottom: 1px solid rgba(16, 185, 129, 0.4);
+  color: #a7f3d0;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  position: relative;
+  z-index: 95;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Submission Grace Period Banner */
+.submission-grace-banner-top {
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.35), rgba(180, 83, 9, 0.3));
+  border-bottom: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fef08a;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  position: relative;
+  z-index: 95;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
